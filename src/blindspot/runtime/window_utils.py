@@ -21,6 +21,7 @@ def bring_browser_window_to_foreground(hint: Optional[str] = None, stay_topmost:
 
     try:
         import ctypes
+        from ctypes import wintypes
 
         user32 = ctypes.windll.user32
         kernel32 = ctypes.windll.kernel32
@@ -75,20 +76,47 @@ def bring_browser_window_to_foreground(hint: Optional[str] = None, stay_topmost:
             class_name = class_buf.value
 
             if "Chrome_WidgetWin_1" in class_name:
-                # Require explicit match to browser test context or target domain
+                # Query owning process image name to guarantee it is a real browser executable
+                pid = ctypes.c_ulong()
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                h_proc = kernel32.OpenProcess(0x1000, False, pid.value)
+                exe_name = ""
+                if h_proc:
+                    pbuf = ctypes.create_unicode_buffer(1024)
+                    size = ctypes.c_ulong(1024)
+                    if kernel32.QueryFullProcessImageNameW(h_proc, 0, pbuf, ctypes.byref(size)):
+                        exe_name = pbuf.value.lower()
+                    kernel32.CloseHandle(h_proc)
+
+                # Skip non-browser electron apps
+                if any(app in exe_name for app in ("code.exe", "slack.exe", "discord.exe", "notion.exe", "antigravity.exe")):
+                    return True
+
+                is_browser = any(exe_name.endswith(b) for b in ("chrome.exe", "chromium.exe", "msedge.exe", "firefox.exe"))
+
                 target_matches = False
                 if any(m in title for m in ("chrome for testing", "chromium", "playwright")):
                     target_matches = True
                 elif clean_hint and clean_hint in title:
                     target_matches = True
-                elif any(m in title for m in ("flipkart", "shopping site", "best offers", "google", "amazon", "apple")):
+                elif is_browser:
                     target_matches = True
 
                 if target_matches:
                     found_hwnd = hwnd
+
+                    # 1. Reset Windows focus stealing lock via synthetic Alt key event & AllowSetForegroundWindow
+                    try:
+                        user32.AllowSetForegroundWindow(-1)
+                        user32.keybd_event(0x12, 0, 0, 0)  # VK_MENU down
+                        user32.keybd_event(0x12, 0, 2, 0)  # VK_MENU up
+                    except Exception:
+                        pass
+
+                    # 2. Restore window if minimized
                     user32.ShowWindow(hwnd, SW_RESTORE)
 
-                    # Bypass Windows focus stealing prevention by attaching to foreground thread if available
+                    # 3. Bypass Windows focus stealing prevention by attaching to foreground thread if available
                     fg_hwnd = user32.GetForegroundWindow()
                     attached = False
                     if fg_hwnd and fg_hwnd != hwnd:
@@ -121,7 +149,17 @@ def bring_browser_window_to_foreground(hint: Optional[str] = None, stay_topmost:
             return True
 
         cb_type = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_int, ctypes.c_int)
-        user32.EnumWindows(cb_type(_enum_cb), 0)
+
+        # Check Default desktop first if running across stations/desktops
+        h_default = user32.OpenDesktopW("Default", 0, False, 0x10000000)
+        if h_default:
+            try:
+                user32.EnumDesktopWindows(h_default, cb_type(_enum_cb), 0)
+            finally:
+                user32.CloseDesktop(h_default)
+        else:
+            user32.EnumWindows(cb_type(_enum_cb), 0)
+
         return found_hwnd
     except Exception:
         return None

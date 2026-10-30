@@ -525,7 +525,7 @@ class BrowserInspector:
                             "## Screenshot",
                             "See [screenshot.png](screenshot.png) for the captured page view.",
                         ])
-                        (run_dir / "website_context.md").write_text("\n".join(context_lines), encoding="utf-8")
+                        # website_context.md removed to keep run directory strictly limited to required files
 
                         # Preserve the detailed inspection artifact for existing users.
                         inspection_md_lines = [

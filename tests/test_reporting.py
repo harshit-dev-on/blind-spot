@@ -495,7 +495,7 @@ def test_generate_ux_report_end_to_end(
 
     # 2. Check that ONLY two markdown files exist in the report directory
     dir_files = sorted([p.name for p in tmp_path.iterdir()])
-    assert dir_files == ["browser_interaction.md", "problems_found.md"], f"Expected only two md files, got: {dir_files}"
+    assert dir_files == ["browser_interaction.md", "improvements_suggestions.md"], f"Expected only two md files, got: {dir_files}"
 
     # 3. Check load_report_data_from_dir round-trip
     from blindspot.reporting import load_report_data_from_dir
@@ -508,14 +508,14 @@ def test_generate_ux_report_end_to_end(
     # 4. Check browser_interaction.md content
     assert interaction_path.exists()
     interaction_content = interaction_path.read_text(encoding="utf-8")
-    assert "BlindSpot Browser Interaction Log" in interaction_content
-    assert "Persona Journey Execution" in interaction_content
+    assert "Live Browser Interaction" in interaction_content
+    assert "Step 0: Initial page observation" in interaction_content
 
-    # 5. Check problems_found.md content
+    # 5. Check improvements_suggestions.md content
     assert problems_path.exists()
     problems_content = problems_path.read_text(encoding="utf-8")
-    assert "# 🔍 BlindSpot UX & Accessibility Audit Report" in problems_content
-    assert "Executive Summary" in problems_content
-    assert "Prioritized UX & Accessibility Findings" in problems_content
+    assert "# UX Improvement Suggestions:" in problems_content
+    assert "1. Executive Summary" in problems_content
+    assert "3. Improvement Suggestions" in problems_content
     assert "<!-- BLINDSPOT_REPORT_DATA:" in problems_content
 

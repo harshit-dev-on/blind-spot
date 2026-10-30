@@ -28,17 +28,17 @@ def mcp_env(tmp_path, monkeypatch):
 
 
 def test_mcp_server_tool_registration():
-    """Verify that the MCP server correctly registers all 5 tools."""
+    """Verify that the MCP server correctly registers the live browser suite."""
     server = create_mcp_server()
     tools = asyncio.run(server.list_tools())
     tool_names = {t.name for t in tools}
 
     expected_tools = {
-        "inspect_website",
-        "get_test_status",
-        "get_test_results",
-        "get_findings",
-        "verify_fixes",
+        "live_browser_open",
+        "live_browser_observe",
+        "live_browser_action",
+        "live_browser_finish",
+        "live_browser_close",
     }
     assert expected_tools.issubset(tool_names), f"Missing tools: {expected_tools - tool_names}"
 

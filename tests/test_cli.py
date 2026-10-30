@@ -205,8 +205,8 @@ def test_inspect_custom_output_dir(tmp_path: Path):
     )
     assert result.exit_code == 0
     assert (out_dir / "browser_interaction.md").exists()
-    assert (out_dir / "problems_found.md").exists()
-    assert sorted([p.name for p in out_dir.iterdir() if p.name.endswith(".md")]) == ["browser_interaction.md", "problems_found.md"]
+    assert (out_dir / "improvements_suggestions.md").exists()
+    assert sorted([p.name for p in out_dir.iterdir() if p.name.endswith(".md")]) == ["browser_interaction.md", "improvements_suggestions.md"]
 
 
 def test_inspect_headed_flag(tmp_path: Path):
@@ -227,8 +227,8 @@ def test_inspect_headed_flag(tmp_path: Path):
     )
     assert result.exit_code == 0
     assert (out_dir / "browser_interaction.md").exists()
-    assert (out_dir / "problems_found.md").exists()
-    assert sorted([p.name for p in out_dir.iterdir() if p.name.endswith(".md")]) == ["browser_interaction.md", "problems_found.md"]
+    assert (out_dir / "improvements_suggestions.md").exists()
+    assert sorted([p.name for p in out_dir.iterdir() if p.name.endswith(".md")]) == ["browser_interaction.md", "improvements_suggestions.md"]
 
 
 
@@ -393,8 +393,8 @@ def test_inspect_executes_and_saves_execution_results(tmp_path: Path):
     assert result.exit_code == 0
     assert "Persona-Based Browser Testing Complete" in result.stdout
     assert (out_dir / "browser_interaction.md").exists()
-    assert (out_dir / "problems_found.md").exists()
-    assert sorted([p.name for p in out_dir.iterdir() if p.name.endswith(".md")]) == ["browser_interaction.md", "problems_found.md"]
+    assert (out_dir / "improvements_suggestions.md").exists()
+    assert sorted([p.name for p in out_dir.iterdir() if p.name.endswith(".md")]) == ["browser_interaction.md", "improvements_suggestions.md"]
     assert ("UX & accessibility audit completed" in result.stdout or "BlindSpot UX Testing & Analysis Complete" in result.stdout)
 
 

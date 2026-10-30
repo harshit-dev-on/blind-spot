@@ -1,8 +1,0 @@
-{
-  "status": "completed",
-  "session_id": "agentic_live_demo",
-  "total_steps": 2,
-  "problems_found": "D:\\Projects\\blind-spot\\blindspot_reports\\agentic_live_demo\\problems_found.md",
-  "interaction_markdown": "D:\\Projects\\blind-spot\\blindspot_reports\\agentic_live_demo\\browser_interaction.md",
-  "website_context": "D:\\Projects\\blind-spot\\blindspot_reports\\agentic_live_demo\\website_context.md"
-}

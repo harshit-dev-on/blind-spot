@@ -30,6 +30,7 @@ class PipelineConfig:
     output_dir: Optional[Path] = None
     iteration: Optional[str] = None
     personas: int = 1
+    persona: Optional[str] = None
     browser: str = "chromium"
     headless: bool = False
     max_actions: int = 35
@@ -159,14 +160,15 @@ def run_pipeline(
     # Instantly create browser_interaction.md the moment auditing starts
     interaction_md_path = run_output_dir / "browser_interaction.md"
     init_header = (
-        f"# 🧭 BlindSpot Browser Interaction Log\n\n"
-        f"- **Target Website**: [{config.url.strip()}]({config.url.strip()})\n"
-        f"- **Auditing Context**: {resolved_context}\n"
-        f"- **Started**: `{datetime.now(timezone.utc).isoformat()}`\n"
-        f"- **Browser Automation**: Playwright {'Headed / Native Visible' if not config.headless else 'Headless'}\n"
-        f"- **Inspection Mode**: Screenshot-Driven Visual Analysis\n"
-        f"- **Status**: 🟡 IN PROGRESS\n\n"
-        f"---\n\n"
+        f"# Live Browser Interaction\n\n"
+        f"- **Target URL:** {config.url.strip()}\n"
+        f"- **Current URL:** {config.url.strip()}\n"
+        f"- **Page Title:** Initializing...\n"
+        f"- **Audit Goal:** {resolved_context}\n"
+        f"- **Status:** IN PROGRESS\n\n"
+        f"## Step 0: Initial page observation\n\n"
+        f"Target website loaded into live browser. Ready for inspection.\n\n"
+        f"![Initial page](screenshots/step-000.png)\n"
     )
     interaction_md_path.write_text(init_header, encoding="utf-8")
 
@@ -192,33 +194,23 @@ def run_pipeline(
             emit("pipeline_cancelled", {"run_id": run_id})
             return result
 
-        # 2. Browser Inspection (Background DOM analysis for persona synthesis)
+        # 2. Browser Inspection (DOM analysis and baseline viewport capture)
         emit("stage_start", {"stage": "inspection", "message": "Analyzing website structure..."})
         inspection = inspect_website(
             url=config.url.strip(),
             context=resolved_context,
             output_dir=run_output_dir,
             browser_type=config.browser,
-            headless=True,
+            headless=config.headless,
             allow_local=config.allow_local,
         )
         result.inspection_result = inspection
-        # Record initial baseline screenshot in browser_interaction.md (clean visual screenshot, no DOM dump)
+        # Save baseline screenshot as step-000.png
         try:
             if inspection.screenshot_path and Path(inspection.screenshot_path).exists():
                 import shutil
-                stage0_shot = screenshots_dir / "stage0_baseline.png"
-                shutil.copy2(inspection.screenshot_path, stage0_shot)
-                with open(interaction_md_path, "a", encoding="utf-8") as f:
-                    f.write(
-                        f"## 📸 Initial Website State & Visual Baseline\n\n"
-                        f"- **Page Title**: `{inspection.title}`\n"
-                        f"- **Final URL**: `{inspection.final_url}`\n"
-                        f"- **Viewport**: `{inspection.viewport.width}x{inspection.viewport.height}`\n"
-                        f"- **Observation**: Target homepage loaded and verified. Persona synthesis initiated.\n\n"
-                        f"![Initial Website State](screenshots/stage0_baseline.png)\n\n"
-                        f"---\n\n"
-                    )
+                step0_shot = screenshots_dir / "step-000.png"
+                shutil.copy2(inspection.screenshot_path, step0_shot)
         except Exception:
             pass
 
@@ -277,6 +269,7 @@ def run_pipeline(
                     provider=provider_instance,
                     num_personas=config.personas,
                     output_dir=run_output_dir,
+                    persona_name=config.persona,
                 )
                 result.plan = plan
             emit("stage_finish", {

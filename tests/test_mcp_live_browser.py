@@ -269,15 +269,17 @@ def test_run_live_bridge_executes_actions_and_finishes(tmp_path):
 
     assert res_dir == output_dir
     assert (output_dir / "browser_interaction.md").is_file()
-    assert (output_dir / "problems_found.md").is_file()
+    assert (output_dir / "improvements_suggestions.md").is_file()
+    assert not (output_dir / "problems_found.md").exists()
     assert (output_dir / "action_needed.json").is_file()
+    assert not (output_dir / "website_context.md").exists()
 
     interaction_text = (output_dir / "browser_interaction.md").read_text(encoding="utf-8")
     assert "Step 1: `click`" in interaction_text
     assert "Click the first link" in interaction_text
     assert "Run completed" in interaction_text
 
-    findings_text = (output_dir / "problems_found.md").read_text(encoding="utf-8")
+    findings_text = (output_dir / "improvements_suggestions.md").read_text(encoding="utf-8")
     assert "Completed testing" in findings_text
     assert "Verified button click" in findings_text
 

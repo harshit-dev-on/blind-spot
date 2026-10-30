@@ -164,6 +164,7 @@ class RunManager:
                 context=record.context,
                 output_dir=record.output_dir,
                 personas=record.config.personas,
+                persona=record.config.persona,
                 browser=record.config.browser,
                 headless=not record.config.headed,
                 max_actions=15,

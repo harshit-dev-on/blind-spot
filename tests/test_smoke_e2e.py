@@ -195,14 +195,14 @@ def test_end_to_end_pipeline_offline_smoke(local_sample_site_url: str, tmp_path:
     assert result.execution_result.passed_tasks == 1
     assert len(result.execution_result.personas) == 1
 
-    # 7. Verify Reports on Disk (strictly three markdown files: browser_interaction.md, problems_found.md, task_tracker.md)
+    # 7. Verify Reports on Disk (strictly two markdown files: browser_interaction.md, improvements_suggestions.md)
     assert result.json_path is not None
     assert Path(result.json_path).exists()
-    assert Path(result.json_path).name == "problems_found.md"
+    assert Path(result.json_path).name == "improvements_suggestions.md"
     assert result.html_path is not None
     assert Path(result.html_path).exists()
     assert Path(result.html_path).name == "browser_interaction.md"
-    assert sorted([p.name for p in run_output_dir.iterdir() if p.is_file()]) == ["browser_interaction.md", "problems_found.md", "task_tracker.md"]
+    assert sorted([p.name for p in run_output_dir.iterdir() if p.is_file()]) == ["browser_interaction.md", "improvements_suggestions.md"]
 
     # Verify report content
     problems_text = Path(result.json_path).read_text(encoding="utf-8")

@@ -9,7 +9,8 @@ class CreateRunRequest(BaseModel):
 
     url: str = Field(..., description="Target website URL to inspect and test.")
     context: str = Field(..., description="Contextual description of the website purpose and audience.")
-    personas: int = Field(default=3, ge=1, le=5, description="Number of synthetic personas to generate (1-5).")
+    personas: int = Field(default=1, ge=1, le=5, description="Number of synthetic personas to generate (1-5, default 1).")
+    persona: Optional[str] = Field(default=None, description="Optional specific persona name or archetype.")
     headed: bool = Field(default=True, description="Run browser in visible window for live demonstration.")
     browser: str = Field(default="chromium", description="Browser engine: chromium, firefox, or webkit.")
     ai_provider: Optional[str] = Field(default=None, description="Optional override for AI provider.")

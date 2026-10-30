@@ -332,3 +332,117 @@ Elements on page:
     assert action.value == "Apple iPhone 16"
 
 
+def test_checkout_form_filling_and_order_submission():
+    """Verify that provider systematically fills checkout form fields and clicks place order."""
+    provider = AntigravityProvider()
+
+    # Step 1: On checkout page with name, phone, address, city unfilled
+    prompt_step1 = '''Objective: Complete checkout and place order
+URL: http://127.0.0.1:8080/#checkout
+Elements on page:
+@e1 <input> (text) placeholder="Full name" [css:input#name]
+@e2 <input> (tel) placeholder="10-digit mobile number" [css:input#phone]
+@e3 <textarea> (textarea) placeholder="Delivery address" [css:textarea#address]
+@e4 <input> (text) placeholder="City" [css:input#city]
+@e5 <button> (button) "Place demo order · ₹70"
+'''
+    act1 = provider._synthesize_agent_action(prompt_step1, AgentAction)
+    assert act1.action == ActionType.FILL
+    assert act1.target == "@e1"
+    assert "elena" in act1.value.lower()
+
+    # Step 2: After name is filled, fill phone
+    prompt_step2 = '''Objective: Complete checkout and place order
+URL: http://127.0.0.1:8080/#checkout
+Step 1: fill @e1 with "Elena Rostova"
+Elements on page:
+@e1 <input> (text) placeholder="Full name" [css:input#name]
+@e2 <input> (tel) placeholder="10-digit mobile number" [css:input#phone]
+@e3 <textarea> (textarea) placeholder="Delivery address" [css:textarea#address]
+@e4 <input> (text) placeholder="City" [css:input#city]
+@e5 <button> (button) "Place demo order · ₹70"
+'''
+    act2 = provider._synthesize_agent_action(prompt_step2, AgentAction)
+    assert act2.action == ActionType.FILL
+    assert act2.target == "@e2"
+    assert "9876543210" in act2.value
+
+    # Step 3: After name and phone filled, fill address
+    prompt_step3 = '''Objective: Complete checkout and place order
+URL: http://127.0.0.1:8080/#checkout
+Step 1: fill @e1 with "Elena Rostova"
+Step 2: fill @e2 with "9876543210"
+Elements on page:
+@e1 <input> (text) placeholder="Full name" [css:input#name]
+@e2 <input> (tel) placeholder="10-digit mobile number" [css:input#phone]
+@e3 <textarea> (textarea) placeholder="Delivery address" [css:textarea#address]
+@e4 <input> (text) placeholder="City" [css:input#city]
+@e5 <button> (button) "Place demo order · ₹70"
+'''
+    act3 = provider._synthesize_agent_action(prompt_step3, AgentAction)
+    assert act3.action == ActionType.FILL
+    assert act3.target == "@e3"
+    assert "market street" in act3.value.lower()
+
+    # Step 4: After all fields filled, clicks place demo order
+    prompt_step4 = '''Objective: Complete checkout and place order
+URL: http://127.0.0.1:8080/#checkout
+Step 1: fill @e1 with "Elena Rostova"
+Step 2: fill @e2 with "9876543210"
+Step 3: fill @e3 with "124 Market Street, Apt 4B"
+Step 4: fill @e4 with "Kolkata"
+Elements on page:
+@e1 <input> (text) placeholder="Full name" [css:input#name]
+@e2 <input> (tel) placeholder="10-digit mobile number" [css:input#phone]
+@e3 <textarea> (textarea) placeholder="Delivery address" [css:textarea#address]
+@e4 <input> (text) placeholder="City" [css:input#city]
+@e5 <button> (button) "Place demo order · ₹70"
+'''
+    act4 = provider._synthesize_agent_action(prompt_step4, AgentAction)
+    assert act4.action == ActionType.CLICK
+    assert act4.target == "@e5"
+
+
+def test_destructive_action_guard_allows_demo_and_local_orders():
+    """Verify is_action_destructive allows demo orders and local testing while blocking deletions."""
+    from blindspot.execution.safety import is_action_destructive
+
+    # Real purchases on live external domains are blocked
+    is_dest, reason = is_action_destructive("Place Order", "")
+    assert is_dest is True
+
+    # Demo orders are allowed
+    is_demo_dest, _ = is_action_destructive("Place demo order · ₹70", "")
+    assert is_demo_dest is False
+
+    # Purchases with allow_local=True are allowed
+    is_local_dest, _ = is_action_destructive("Place Order", "", allow_local=True)
+    assert is_local_dest is False
+
+    # True destructive account deletion is blocked even locally
+    is_wipe_dest, _ = is_action_destructive("Delete Account", "", allow_local=True)
+    assert is_wipe_dest is True
+
+
+def test_ux_evaluation_task_criteria_verification():
+    """Verify that qualitative UX inspection tasks succeed upon completion."""
+    agent = PersonaTaskAgent(provider=AntigravityProvider(), headless=True)
+    task = PersonaTask(
+        id="task_readability",
+        objective="Inspect main navigation links and section headings to verify they are easy to find and readable",
+        success_criteria=[
+            "Primary navigation links and section headings are clearly identified",
+            "Text contrast and font sizing meet readability expectations",
+        ],
+        evidence_to_collect=["Readability evidence"],
+    )
+    satisfied, reason = agent._verify_criteria_on_page(
+        task=task,
+        url="http://127.0.0.1:8080/",
+        page_text="MediCare Online Pharmacy Catalog Explore Medicines",
+    )
+    assert satisfied is True
+    assert "visual ux inspection" in reason.lower()
+
+
+

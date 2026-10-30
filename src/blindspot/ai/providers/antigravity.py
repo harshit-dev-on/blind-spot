@@ -318,107 +318,105 @@ class AntigravityProvider(BaseAIProvider):
         instruction = context_match.group(1).strip() if context_match else "Website usability audit"
 
         # Check for specific intent (e.g. search, buy, order, navigate)
-        is_order_intent = any(w in instruction.lower() for w in ("order", "buy", "cart", "iphone", "checkout", "purchase"))
-        is_iphone = "iphone" in instruction.lower()
+        is_order_intent = any(w in instruction.lower() for w in ("order", "buy", "cart", "checkout", "purchase"))
+        iphone_match = re.search(r"\b(apple\s+iphone(?:\s+\d+[a-z]*)?|iphone(?:\s+\d+[a-z]*)?)\b", instruction, re.I)
+        target_product = iphone_match.group(1).strip() if iphone_match else "item"
 
-        if is_order_intent:
-            target_product = "Apple iPhone 16" if is_iphone else "product"
-            personas = [
-                Persona(
-                    id="persona_elena_elderly",
-                    name="Elena - Senior User (Low Vision & Novice Tech)",
-                    description=f"Senior citizen (age 70+) searching for {target_product}, cautious browsing pace, evaluating visual readability, text contrast, button affordances, and navigating the purchasing funnel.",
-                    experience_level="Novice",
-                    goals=[
-                        f"Find {target_product} using high-contrast search controls",
-                        "Read specifications and price without eye strain (min 16px font and WCAG AA 4.5:1 contrast)",
-                        "Locate prominent 'Add to Cart' button with clear click affordance",
-                        "Inspect Shopping Cart and checkout progression without confusion",
-                    ],
-                    likely_difficulties=[
-                        "Faint grey text on white backgrounds (<4.5:1 contrast)",
-                        "Tiny font sizes (<16px)",
-                        "Flat buttons lacking visible borders or clear click affordances",
-                        "Disorienting auto-rotating carousels and unexpected modal popups",
-                        "Cluttered layouts and absence of clear back navigation",
-                    ],
-                    accessibility_needs="Low-Vision / High-Contrast & Zoom (Cannot see small text <16px or low contrast differences; requires minimum 4.5:1 contrast, >= 16px fonts, and large click targets)",
+        # Extract num_personas requested in prompt
+        num_match = re.search(r"Generate exactly (\d+) diverse", prompt)
+        num_requested = int(num_match.group(1)) if num_match else 1
+        num_requested = max(1, min(num_requested, 5))
+
+        # Check for explicitly requested persona archetype
+        persona_req_match = re.search(r"TARGET PERSONA ARCHETYPE:\s*([^\n]+)", prompt, re.IGNORECASE)
+        requested_persona = persona_req_match.group(1).strip() if persona_req_match else None
+
+        nav_task_obj = "Explore primary navigation links, proceed through core website sections, and verify obvious back controls without confusing popups or disorienting carousels."
+        if target_product and is_order_intent:
+            nav_task_obj = f"Explore navigation journey to find '{target_product}', add to cart, and verify obvious back controls without confusing popups."
+        elif target_product:
+            nav_task_obj = f"Explore navigation journey to find '{target_product}', proceed through core website sections, and verify obvious back controls."
+        elif is_order_intent:
+            nav_task_obj = "Explore navigation journey, evaluate button affordances to add to cart, and verify obvious back controls."
+
+        elena_elderly_persona = Persona(
+            id="persona_elena_elderly",
+            name="Elena - Senior User (Low Vision & Novice Tech)",
+            description="Senior citizen (age 70+) exploring website features, evaluating visual readability, text contrast, button affordances, and navigating core features without confusion.",
+            experience_level="Novice",
+            goals=[
+                "Easily read website text and headlines without eye strain (min 16px font and WCAG AA 4.5:1 contrast)",
+                "Distinguish interactive buttons and call-to-actions from background content",
+                "Navigate primary features without confusion, dead ends, or intrusive popups",
+            ],
+            likely_difficulties=[
+                "Faint grey text on white backgrounds (<4.5:1 contrast)",
+                "Tiny font sizes (<16px)",
+                "Flat buttons lacking visible borders or clear click affordances",
+                "Disorienting auto-rotating carousels and unexpected modal popups",
+                "Cluttered layouts and absence of clear back navigation",
+            ],
+            accessibility_needs="Low-Vision / High-Contrast & Zoom (Cannot see small text <16px or low contrast differences; requires minimum 4.5:1 contrast, >= 16px fonts, and large click targets)",
+            tasks=[
+                PersonaTask(
+                    id="task_elena_text_readability",
+                    objective="Read main headlines, navigation menus, and content to verify text is comfortably readable without squinting (minimum 16px font and WCAG AA 4.5:1 contrast).",
+                    starting_conditions="Starts on target page",
+                    success_criteria=["Main headlines and navigation labels have sufficient contrast against background", "Font sizes are at least 16px", "Text is not faint or clipped"],
+                    evidence_to_collect=["Computed font sizes", "Text color vs background color", "Clipped or overflowing text containers"],
+                    is_verified=True,
+                ),
+                PersonaTask(
+                    id="task_elena_button_affordance",
+                    objective="Find primary action buttons (e.g. 'Get Started', 'Learn More', 'Shop Now') and verify they have obvious button affordance and distinct high contrast.",
+                    starting_conditions="Starts on target page",
+                    success_criteria=["Primary button has distinct background color, clear borders, legible high-contrast label", "Does not blend invisibly into background"],
+                    evidence_to_collect=["Button computed styles (background-color, padding, border)", "Bounding box dimensions", "Visibility state"],
+                    is_verified=True,
+                ),
+                PersonaTask(
+                    id="task_elena_navigation_journey",
+                    objective=nav_task_obj,
+                    starting_conditions="Starts on homepage",
+                    success_criteria=["Navigation progresses cleanly with legible headings and obvious breadcrumbs", "No jarring layout shifts or disorienting popups block the screen"],
+                    evidence_to_collect=["Back link or logo availability", "Page title clarity", "Presence of intrusive blocking overlays"],
+                    is_verified=True,
+                ),
+            ],
+        )
+
+        all_personas = [elena_elderly_persona]
+
+        # Reorder if specific archetype requested
+        if requested_persona:
+            req_low = requested_persona.lower()
+            matched_p = next((p for p in all_personas if req_low in p.id.lower() or req_low in p.name.lower()), None)
+            if matched_p:
+                all_personas = [matched_p] + [p for p in all_personas if p != matched_p]
+            else:
+                # Custom unknown persona: synthesize dedicated persona entry
+                custom_p = Persona(
+                    id=f"persona_{re.sub(r'[^a-zA-Z0-9]+', '_', req_low)}",
+                    name=f"{requested_persona.title()} - Simulated User",
+                    description=f"Simulated user persona exploring website features tailored for '{requested_persona}'.",
+                    experience_level="Intermediate",
+                    goals=[f"Explore website user flow as {requested_persona}", "Verify usability and core interactions"],
+                    likely_difficulties=["Confusing user journey", "Unclear button feedback"],
+                    accessibility_needs="Standard Browsing",
                     tasks=[
                         PersonaTask(
-                            id="task_search_and_discover",
-                            objective=f"Locate the search bar using high-contrast input, search for '{target_product}', and browse result listings with legible text and prices.",
-                            starting_conditions="Starts on homepage",
-                            success_criteria=[f"Search query '{target_product}' submitted", "Product search results displayed with legible titles and prices"],
-                            evidence_to_collect=["Search input value", "Results heading text", "Top product titles and price contrast"],
-                            is_verified=True,
-                        ),
-                        PersonaTask(
-                            id="task_pdp_inspect_and_cart",
-                            objective=f"Open the top '{target_product}' item in active tab, inspect readable specifications and price contrast, verify prominent button affordance, and add to cart.",
-                            starting_conditions="Starts on search results listing page",
-                            success_criteria=["Product details page opened in active tab", "Product specifications and variant inspected", "Add to Cart or Buy Now clicked"],
-                            evidence_to_collect=["Product details heading", "Variant selection", "Cart action confirmation"],
-                            is_verified=True,
-                        ),
-                        PersonaTask(
-                            id="task_cart_and_checkout_funnel",
-                            objective="Navigate to the Cart, verify readable item details, quantity, delivery fee, and proceed to checkout without confusion.",
-                            starting_conditions="Starts on product details page or cart drawer",
-                            success_criteria=["Cart page opened and verified", "Cart total and items reviewed", "Proceed to checkout or authentication flow reached"],
-                            evidence_to_collect=["Cart total price", "Checkout URL", "Authentication barrier"],
-                            is_verified=True,
-                        ),
-                    ],
-                ),
-            ]
-        else:
-            personas = [
-                Persona(
-                    id="persona_elena_elderly",
-                    name="Elena - Senior User (Low Vision & Novice Tech)",
-                    description="Senior citizen (age 70+) exploring website features, evaluating visual readability, text contrast, button affordances, and navigating core features without confusion.",
-                    experience_level="Novice",
-                    goals=[
-                        "Easily read website text and headlines without eye strain (min 16px font and WCAG AA 4.5:1 contrast)",
-                        "Distinguish interactive buttons and call-to-actions from background content",
-                        "Navigate primary features without confusion, dead ends, or intrusive popups",
-                    ],
-                    likely_difficulties=[
-                        "Faint grey text on white backgrounds (<4.5:1 contrast)",
-                        "Tiny font sizes (<16px)",
-                        "Flat buttons lacking visible borders or clear click affordances",
-                        "Disorienting auto-rotating carousels and unexpected modal popups",
-                        "Cluttered layouts and absence of clear back navigation",
-                    ],
-                    accessibility_needs="Low-Vision / High-Contrast & Zoom (Cannot see small text <16px or low contrast differences; requires minimum 4.5:1 contrast, >= 16px fonts, and large click targets)",
-                    tasks=[
-                        PersonaTask(
-                            id="task_elena_text_readability",
-                            objective="Read main headlines, navigation menus, and content to verify text is comfortably readable without squinting (minimum 16px font and WCAG AA 4.5:1 contrast).",
+                            id=f"task_{re.sub(r'[^a-zA-Z0-9]+', '_', req_low)}_flow",
+                            objective=f"Evaluate website flow as {requested_persona}",
                             starting_conditions="Starts on target page",
-                            success_criteria=["Main headlines and navigation labels have sufficient contrast against background", "Font sizes are at least 16px", "Text is not faint or clipped"],
-                            evidence_to_collect=["Computed font sizes", "Text color vs background color", "Clipped or overflowing text containers"],
+                            success_criteria=["Page loaded and primary navigation accessible"],
+                            evidence_to_collect=["Visible interactive elements"],
                             is_verified=True,
-                        ),
-                        PersonaTask(
-                            id="task_elena_button_affordance",
-                            objective="Find primary action buttons (e.g. 'Get Started', 'Learn More', 'Shop Now') and verify they have obvious button affordance and distinct high contrast.",
-                            starting_conditions="Starts on target page",
-                            success_criteria=["Primary button has distinct background color, clear borders, legible high-contrast label", "Does not blend invisibly into background"],
-                            evidence_to_collect=["Button computed styles (background-color, padding, border)", "Bounding box dimensions", "Visibility state"],
-                            is_verified=True,
-                        ),
-                        PersonaTask(
-                            id="task_elena_navigation_journey",
-                            objective="Explore primary navigation links or search, proceed through core website sections, and verify obvious back controls without confusing popups or disorienting carousels.",
-                            starting_conditions="Starts on homepage",
-                            success_criteria=["Navigation progresses cleanly with legible headings and obvious breadcrumbs", "No jarring layout shifts or disorienting popups block the screen"],
-                            evidence_to_collect=["Back link or logo availability", "Page title clarity", "Presence of intrusive blocking overlays"],
-                            is_verified=True,
-                        ),
+                        )
                     ],
-                ),
-            ]
+                )
+                all_personas = [custom_p] + all_personas
+
+        personas = all_personas[:num_requested]
 
         payload = PersonaPlanPayload(
             website_summary=f"E-commerce & web portal evaluated for: {instruction}",
@@ -512,67 +510,85 @@ class AntigravityProvider(BaseAIProvider):
                 reasoning="Dialog dismissed cleanly and focus restored.",
             )
 
+        # ── Detect Page State ──
+        is_checkout_page = (
+            any(k in curr_url for k in ("/checkout", "/order-summary", "/payment", "#checkout"))
+            or any(
+                any(w in rest.lower() for w in ("delivery details", "shipping address", "delivery address", "place demo order", "complete order", "payment method"))
+                for _, _, _, rest in elements
+            )
+        )
+        has_auth_field = any(
+            any(k in rest.lower() for k in ("enter otp", "6-digit", "4-digit", "verification code", "password", "passcode", "login or signup", "sign in to your account"))
+            for _, _, _, rest in elements
+        )
+        is_auth_screen = has_auth_field or any(k in curr_url for k in ("/login", "/signin", "/auth", "/account/login")) or any(
+            any(k in rest.lower() for k in ("login or signup", "sign in to your account", "request otp", "login to continue"))
+            for _, _, _, rest in elements
+        ) or any(w in objective_lower for w in ("login", "sign in", "authenticate", "otp"))
+
         # ── 4. Login / Authentication / OTP / User Input Handling ──
-        for ref, tag, el_type, rest in elements:
-            if tag.lower() not in ("input", "textarea") and "input" not in el_type.lower():
-                continue
-            low_rest = rest.lower()
+        if has_auth_field or (not is_checkout_page and is_auth_screen):
+            for ref, tag, el_type, rest in elements:
+                if tag.lower() not in ("input", "textarea") and "input" not in el_type.lower():
+                    continue
+                low_rest = rest.lower()
 
-            # Search inputs can be rendered alongside login controls and CSS
-            # class names may contain "mobile". Exclude search controls before
-            # interpreting identity words as an authentication request.
-            is_search_input = any(w in low_rest for w in (
-                "search", "name=\"q\"", "name='q'", "id=\"q\"", "type=\"search\"",
-            ))
-            if is_search_input:
-                continue
+                # Search inputs can be rendered alongside login controls and CSS
+                # class names may contain "mobile". Exclude search controls before
+                # interpreting identity words as an authentication request.
+                is_search_input = any(w in low_rest for w in (
+                    "search", "name=\"q\"", "name='q'", "id=\"q\"", "type=\"search\"",
+                ))
+                if is_search_input:
+                    continue
 
-            # Priority 1: Explicit identity fields only. Generic phone/mobile
-            # substrings in CSS or surrounding page text are not sufficient.
-            if any(w in low_rest for w in ("email/mobile", "email or mobile", "email address", "mobile number", "phone number", "enter email", "enter mobile", "enter your mobile", "10-digit")):
-                return AgentAction(
-                    action=ActionType.FILL,
-                    target=ref,
-                    value="<PROMPT_USER>",
-                    text="<PROMPT_USER>",
-                    press_enter=True,
-                    reasoning="Prompt user in terminal for Mobile/Email login identity and fill into authentication form.",
-                )
+                # Priority 1: Explicit identity fields only. Generic phone/mobile
+                # substrings in CSS or surrounding page text are not sufficient.
+                if any(w in low_rest for w in ("email/mobile", "email or mobile", "email address", "mobile number", "phone number", "enter email", "enter mobile", "enter your mobile", "10-digit")):
+                    return AgentAction(
+                        action=ActionType.FILL,
+                        target=ref,
+                        value="<PROMPT_USER>",
+                        text="<PROMPT_USER>",
+                        press_enter=True,
+                        reasoning="Prompt user in terminal for Mobile/Email login identity and fill into authentication form.",
+                    )
 
-            # Priority 2: Genuine OTP / verification code field (must be the input itself asking for OTP)
-            if any(w in low_rest for w in ("enter otp", "6-digit", "4-digit", "verification code", "one-time", "digit code")) or (
-                ("otp" in low_rest or "passcode" in low_rest) and not any(k in low_rest for k in ("request otp", "get otp", "send otp"))
-            ):
-                return AgentAction(
-                    action=ActionType.FILL,
-                    target=ref,
-                    value="<PROMPT_USER>",
-                    text="<PROMPT_USER>",
-                    press_enter=True,
-                    reasoning="Prompt user in terminal for OTP verification code and fill into authentication form.",
-                )
+                # Priority 2: Genuine OTP / verification code field (must be the input itself asking for OTP)
+                if any(w in low_rest for w in ("enter otp", "6-digit", "4-digit", "verification code", "one-time", "digit code")) or (
+                    ("otp" in low_rest or "passcode" in low_rest) and not any(k in low_rest for k in ("request otp", "get otp", "send otp"))
+                ):
+                    return AgentAction(
+                        action=ActionType.FILL,
+                        target=ref,
+                        value="<PROMPT_USER>",
+                        text="<PROMPT_USER>",
+                        press_enter=True,
+                        reasoning="Prompt user in terminal for OTP verification code and fill into authentication form.",
+                    )
 
-            # Priority 3: Password field
-            if "password" in low_rest or "passphrase" in low_rest:
-                return AgentAction(
-                    action=ActionType.FILL,
-                    target=ref,
-                    value="<PROMPT_USER>",
-                    text="<PROMPT_USER>",
-                    press_enter=True,
-                    reasoning="Prompt user in terminal for Password and fill into authentication form.",
-                )
+                # Priority 3: Password field
+                if "password" in low_rest or "passphrase" in low_rest:
+                    return AgentAction(
+                        action=ActionType.FILL,
+                        target=ref,
+                        value="<PROMPT_USER>",
+                        text="<PROMPT_USER>",
+                        press_enter=True,
+                        reasoning="Prompt user in terminal for Password and fill into authentication form.",
+                    )
 
-            # Priority 4: Coupon / Promo Code
-            if any(w in low_rest for w in ("coupon", "promo code", "discount code", "voucher")):
-                return AgentAction(
-                    action=ActionType.FILL,
-                    target=ref,
-                    value="<PROMPT_USER>",
-                    text="<PROMPT_USER>",
-                    press_enter=True,
-                    reasoning="Prompt user in terminal for Coupon Code and fill into form.",
-                )
+                # Priority 4: Coupon / Promo Code
+                if any(w in low_rest for w in ("coupon", "promo code", "discount code", "voucher")):
+                    return AgentAction(
+                        action=ActionType.FILL,
+                        target=ref,
+                        value="<PROMPT_USER>",
+                        text="<PROMPT_USER>",
+                        press_enter=True,
+                        reasoning="Prompt user in terminal for Coupon Code and fill into form.",
+                    )
 
         # ── 4b. Recover from Irrelevant Navigation or External Subsites ──
         if any(unw in curr_url for unw in (
@@ -583,6 +599,161 @@ class AntigravityProvider(BaseAIProvider):
                 action=ActionType.GO_BACK,
                 reasoning="Navigated to irrelevant flight booking / sub-vertical page; navigating back to main shopping storefront.",
             )
+
+        # ── 4c. Dedicated Persona Usability & Accessibility Tasks (Elena & Universal Tasks) ──
+
+        # Task 2: Button Affordance & Interactive Controls
+        is_button_task = any(w in objective_lower for w in (
+            "button affordance", "primary action button", "action button", "button", "interactive controls", "touch target", "click affordance"
+        ))
+
+        # Task 1: Text Readability and Typography Contrast
+        is_readability_task = not is_button_task and any(w in objective_lower for w in (
+            "text readability", "read main headlines", "typography", "font size", "readability", "comfortably readable", "text contrast"
+        ))
+        if is_readability_task:
+            if step_count == 0:
+                return AgentAction(
+                    action=ActionType.SCROLL,
+                    direction="down",
+                    amount=450,
+                    reasoning="As Elena (senior user with low vision), scrolling down to inspect body text typography, section headlines, and color contrast against container backgrounds.",
+                )
+            elif step_count == 1:
+                return AgentAction(
+                    action=ActionType.SCROLL,
+                    direction="down",
+                    amount=450,
+                    reasoning="Scrolling further down to evaluate secondary copy, labels, and small subtext for minimum 16px size and 4.5:1 contrast compliance.",
+                )
+            else:
+                return AgentAction(
+                    action=ActionType.FINISH,
+                    reasoning="Completed typography and visual contrast evaluation across page headings, body content, and metadata.",
+                )
+
+        # Task 2: Button Affordance & Interactive Controls
+        is_button_task = any(w in objective_lower for w in (
+            "button affordance", "primary action buttons", "action button", "interactive controls", "touch target", "click affordance"
+        ))
+        if is_button_task:
+            if step_count == 0:
+                # Find prominent primary action button
+                prominent_btn = None
+                for ref, tag, el_type, rest in elements:
+                    if ref.lower() in clicked_refs:
+                        continue
+                    clean_rest = re.sub(r"\[css:[^\]]*\]", "", rest, flags=re.IGNORECASE).lower()
+                    if tag.lower() == "button" or "button" in el_type.lower() or (tag.lower() == "a" and any(b in clean_rest for b in ("btn", "button", "shop", "get started", "order", "explore", "learn more"))):
+                        prominent_btn = (ref, clean_rest)
+                        break
+                if prominent_btn:
+                    pref, pdesc = prominent_btn
+                    return AgentAction(
+                        action=ActionType.HOVER,
+                        target=pref,
+                        reasoning=f"As Elena, hovering over primary button {pref} ({pdesc[:40]}) to test visual hover state, focus indicator, and boundary clarity.",
+                    )
+                return AgentAction(
+                    action=ActionType.SCROLL,
+                    direction="down",
+                    amount=350,
+                    reasoning="Scrolling down to locate primary interactive buttons and evaluate visual affordance.",
+                )
+            elif step_count == 1:
+                return AgentAction(
+                    action=ActionType.PRESS,
+                    key="Tab",
+                    reasoning="Pressing Tab key to verify visible keyboard focus outline on interactive controls.",
+                )
+            elif step_count == 2:
+                return AgentAction(
+                    action=ActionType.SCROLL,
+                    direction="down",
+                    amount=350,
+                    reasoning="Scrolling down to inspect secondary action buttons, filter chips, and touch target dimensions.",
+                )
+            else:
+                return AgentAction(
+                    action=ActionType.FINISH,
+                    reasoning="Completed button affordance, hover state, and focus indicator evaluation across interactive elements.",
+                )
+
+        # Task 3: Navigation Journey & Return Controls
+        is_nav_journey_task = any(w in objective_lower for w in (
+            "navigation journey", "explore primary navigation", "core website sections"
+        ))
+        if is_nav_journey_task:
+            if step_count == 0:
+                # Find primary navigation category link
+                nav_target = None
+                for ref, tag, el_type, rest in elements:
+                    if ref.lower() in clicked_refs:
+                        continue
+                    clean_rest = re.sub(r"\[css:[^\]]*\]", "", rest, flags=re.IGNORECASE).lower()
+                    if any(unw in clean_rest for unw in ("flight", "travel", "cleartrip", "seller")):
+                        continue
+                    if tag.lower() == "a" and any(k in clean_rest for k in ("shop", "medicines", "products", "categories", "services", "mobiles", "electronics", "fashion", "home", "about")):
+                        nav_target = (ref, clean_rest)
+                        break
+                if not nav_target:
+                    for ref, tag, el_type, rest in elements:
+                        if ref.lower() in clicked_refs:
+                            continue
+                        clean_rest = re.sub(r"\[css:[^\]]*\]", "", rest, flags=re.IGNORECASE).lower()
+                        if tag.lower() in ("a", "button") and not any(k in clean_rest for k in ("home", "logo", "privacy", "terms", "login", "close", "flight")):
+                            nav_target = (ref, clean_rest)
+                            break
+                if nav_target:
+                    nref, ndesc = nav_target
+                    return AgentAction(
+                        action=ActionType.CLICK,
+                        target=nref,
+                        reasoning=f"As an elderly user, clicking primary navigation link {nref} ({ndesc[:40]}) to explore core section and evaluate navigation clarity.",
+                    )
+                return AgentAction(
+                    action=ActionType.SCROLL,
+                    direction="down",
+                    amount=400,
+                    reasoning="Scrolling down to locate primary navigation links.",
+                )
+            elif step_count == 1:
+                return AgentAction(
+                    action=ActionType.SCROLL,
+                    direction="down",
+                    amount=400,
+                    reasoning="Browsing navigated section to verify content clarity, readable section headings, and layout stability.",
+                )
+            elif step_count == 2:
+                # Look for a Home / Back link to return
+                home_target = None
+                for ref, tag, el_type, rest in elements:
+                    clean_rest = re.sub(r"\[css:[^\]]*\]", "", rest, flags=re.IGNORECASE).lower()
+                    if tag.lower() == "a" and any(k in clean_rest for k in ("home", "logo", "back")):
+                        home_target = (ref, clean_rest)
+                        break
+                if home_target:
+                    href, hdesc = home_target
+                    return AgentAction(
+                        action=ActionType.CLICK,
+                        target=href,
+                        reasoning=f"Testing return navigation: clicking Home link {href} ({hdesc[:30]}) to verify senior users can return without confusion.",
+                    )
+                elif curr_url and curr_url != "about:blank" and not curr_url.endswith("/"):
+                    return AgentAction(
+                        action=ActionType.GO_BACK,
+                        reasoning="Testing browser back navigation to return from navigated section.",
+                    )
+                else:
+                    return AgentAction(
+                        action=ActionType.FINISH,
+                        reasoning="Successfully completed navigation journey, section transition inspection, and verified return pathways.",
+                    )
+            else:
+                return AgentAction(
+                    action=ActionType.FINISH,
+                    reasoning="Successfully completed navigation journey, section transition inspection, and verified return pathways.",
+                )
 
         # ── 5. Detect Current Page Type ──
         is_cart_page = any(k in curr_url for k in ("/cart", "/viewcart", "/basket")) or any(
@@ -597,10 +768,16 @@ class AntigravityProvider(BaseAIProvider):
             any(w in rest.lower() for w in ("add to cart", "buy now", "add to bag"))
             for _, _, _, rest in elements
         )) and not is_search_page
-        is_checkout_page = any(k in curr_url for k in ("/checkout", "/order-summary", "/payment"))
+        is_checkout_page = (
+            any(k in curr_url for k in ("/checkout", "/order-summary", "/payment", "#checkout"))
+            or any(
+                any(w in rest.lower() for w in ("delivery details", "shipping address", "delivery address", "place demo order", "complete order", "payment method"))
+                for _, _, _, rest in elements
+            )
+        )
 
         # ── 6. State: Shopping Cart & Checkout Funnel ──
-        if is_cart_page:
+        if is_cart_page and not is_checkout_page:
             # Look for Place Order or Proceed to Checkout button
             for ref, tag, el_type, rest in elements:
                 if ref.lower() in clicked_refs:
@@ -610,7 +787,7 @@ class AntigravityProvider(BaseAIProvider):
                     return AgentAction(
                         action=ActionType.CLICK,
                         target=ref,
-                        reasoning=f"Click '{ref}' ({rest.strip()[:40]}) to evaluate the checkout flow and authentication barrier.",
+                        reasoning=f"Click '{ref}' ({rest.strip()[:40]}) to advance to checkout and evaluate delivery/payment steps.",
                     )
             # Scroll down to review cart item breakdown and total prices
             if step_count < 2:
@@ -620,15 +797,152 @@ class AntigravityProvider(BaseAIProvider):
                     amount=400,
                     reasoning="Scroll down inside shopping cart to inspect price breakdown, delivery charges, and item details.",
                 )
+            for ref, tag, el_type, rest in elements:
+                low_rest = rest.lower()
+                if any(w in low_rest for w in ("place order", "proceed to checkout", "checkout", "proceed to pay")):
+                    return AgentAction(
+                        action=ActionType.CLICK,
+                        target=ref,
+                        reasoning=f"Click '{ref}' to enter checkout.",
+                    )
             return AgentAction(
                 action=ActionType.FINISH,
                 reasoning="Verified cart contents, quantity selectors, price breakdown, and checkout action.",
             )
 
         if is_checkout_page:
+            # Check for order confirmation / completed screen
+            for ref, tag, el_type, rest in elements:
+                low_rest = rest.lower()
+                if any(w in low_rest for w in ("order placed", "order confirmed", "thank you for your order", "order id", "order #", "order successful")):
+                    return AgentAction(
+                        action=ActionType.FINISH,
+                        reasoning="Order successfully placed and verified in checkout confirmation screen.",
+                    )
+
+            # Systematically fill checkout form inputs with realistic senior persona test data
+            # 1. Full name / Customer name
+            for ref, tag, el_type, rest in elements:
+                if ref.lower() in filled_refs:
+                    continue
+                low_rest = rest.lower()
+                if tag.lower() in ("input", "textarea") and any(w in low_rest for w in ("full name", "first name", "your name", "customer name", "recipient", "name")):
+                    if not any(k in low_rest for k in ("search", "coupon", "promo")):
+                        return AgentAction(
+                            action=ActionType.FILL,
+                            target=ref,
+                            value="Elena Rostova",
+                            text="Elena Rostova",
+                            reasoning=f"Fill senior user name 'Elena Rostova' into checkout name input {ref}.",
+                        )
+
+            # 2. Contact Phone / Mobile number for delivery updates
+            for ref, tag, el_type, rest in elements:
+                if ref.lower() in filled_refs:
+                    continue
+                low_rest = rest.lower()
+                if tag.lower() in ("input", "textarea") and any(w in low_rest for w in ("mobile", "phone", "contact", "10-digit", "telephone")):
+                    if not any(k in low_rest for k in ("search", "coupon", "promo", "password")):
+                        return AgentAction(
+                            action=ActionType.FILL,
+                            target=ref,
+                            value="9876543210",
+                            text="9876543210",
+                            reasoning=f"Fill contact phone '9876543210' into delivery phone input {ref}.",
+                        )
+
+            # 3. Delivery / Street Address
+            for ref, tag, el_type, rest in elements:
+                if ref.lower() in filled_refs:
+                    continue
+                low_rest = rest.lower()
+                if tag.lower() in ("input", "textarea") and any(w in low_rest for w in ("address", "street", "flat", "house", "building", "delivery location")):
+                    if not any(k in low_rest for k in ("email", "search")):
+                        return AgentAction(
+                            action=ActionType.FILL,
+                            target=ref,
+                            value="124 Market Street, Apt 4B",
+                            text="124 Market Street, Apt 4B",
+                            reasoning=f"Fill delivery address '124 Market Street, Apt 4B' into address field {ref}.",
+                        )
+
+            # 4. City / Town
+            for ref, tag, el_type, rest in elements:
+                if ref.lower() in filled_refs:
+                    continue
+                low_rest = rest.lower()
+                if tag.lower() in ("input", "textarea") and any(w in low_rest for w in ("city", "town", "district")):
+                    return AgentAction(
+                        action=ActionType.FILL,
+                        target=ref,
+                        value="Kolkata",
+                        text="Kolkata",
+                        reasoning=f"Fill city 'Kolkata' into city field {ref}.",
+                    )
+
+            # 5. Pincode / Postal / Zip code
+            for ref, tag, el_type, rest in elements:
+                if ref.lower() in filled_refs:
+                    continue
+                low_rest = rest.lower()
+                if tag.lower() in ("input", "textarea") and any(w in low_rest for w in ("pin", "zip", "postal")):
+                    return AgentAction(
+                        action=ActionType.FILL,
+                        target=ref,
+                        value="700001",
+                        text="700001",
+                        reasoning=f"Fill postal code '700001' into pincode input {ref}.",
+                    )
+
+            # 6. Any remaining unfilled visible text input / textarea on checkout page
+            for ref, tag, el_type, rest in elements:
+                if ref.lower() in filled_refs:
+                    continue
+                low_rest = rest.lower()
+                if tag.lower() in ("input", "textarea") and el_type.lower() in ("text", "", "tel") and not any(k in low_rest for k in ("search", "password", "otp")):
+                    return AgentAction(
+                        action=ActionType.FILL,
+                        target=ref,
+                        value="Elena Test",
+                        text="Elena Test",
+                        reasoning=f"Fill checkout form input {ref} ({low_rest[:30]}).",
+                    )
+
+            # 7. Select Payment Method if radio buttons or payment selection exist
+            for ref, tag, el_type, rest in elements:
+                if ref.lower() in clicked_refs:
+                    continue
+                low_rest = rest.lower()
+                if any(w in low_rest for w in ("cash on delivery", "pay on delivery", "cod", "demo pay", "pay with demo")):
+                    return AgentAction(
+                        action=ActionType.CLICK,
+                        target=ref,
+                        reasoning=f"Select payment option {ref} ({rest.strip()[:35]}).",
+                    )
+
+            # 8. Submit Order / Place Order button
+            for ref, tag, el_type, rest in elements:
+                clean_rest = re.sub(r"\[css:[^\]]*\]", "", rest, flags=re.IGNORECASE).lower()
+                if any(w in clean_rest for w in ("place order", "place demo order", "confirm order", "complete order", "submit order", "pay now", "proceed to payment")):
+                    if ref.lower() not in clicked_refs:
+                        return AgentAction(
+                            action=ActionType.CLICK,
+                            target=ref,
+                            reasoning=f"Click '{ref}' ({clean_rest.strip()[:40]}) to submit the completed order and evaluate confirmation feedback.",
+                        )
+
+            # 9. If all fields are filled and place order was clicked, scroll to inspect confirmation
+            if step_count < 6:
+                return AgentAction(
+                    action=ActionType.SCROLL,
+                    direction="down",
+                    amount=350,
+                    reasoning="Scroll to inspect order summary, submission feedback, and confirmation state.",
+                )
+
             return AgentAction(
                 action=ActionType.FINISH,
-                reasoning="Reached checkout funnel, verified authentication and delivery address requirements.",
+                reasoning="Completed checkout funnel audit, form field validation, and order submission verification.",
             )
 
         # ── 7. State: Product Details Page (PDP) & Cart Triggering ──
@@ -854,7 +1168,8 @@ class AntigravityProvider(BaseAIProvider):
         )
 
         # If on homepage and not on PDP/cart, check if product search bar is available
-        if is_search_intent or (not is_search_page and not is_pdp and not is_cart_page and any(w in prompt.lower() for w in ("iphone", "laptop", "product", "cart", "buy", "order"))):
+        has_search_objective = is_search_intent or (not is_search_page and not is_pdp and not is_cart_page and any(w in objective_lower for w in ("iphone", "laptop", "product", "cart", "buy", "order")))
+        if has_search_objective:
             has_filled = any("fill" in h.lower() for h in re.findall(r"Step\s+\d+:\s+(\w+)", prompt))
             if not has_filled:
                 # Strictly identify genuine product search input and reject location/pincode/flight inputs
@@ -891,13 +1206,29 @@ class AntigravityProvider(BaseAIProvider):
                 chosen_search = primary_search_inputs[0] if primary_search_inputs else (secondary_search_inputs[0] if secondary_search_inputs else None)
                 if chosen_search:
                     search_ref, clean_desc = chosen_search
-                    # Extract target product from objective or prompt
-                    search_match = re.search(r"search for ['\"]([^'\"]+)['\"]", objective, re.IGNORECASE)
+                    # Extract target search query from objective or prompt, or fallback to site context keywords
+                    search_match = re.search(r"search\s+for\s+['\"]([^'\"]+)['\"]", objective, re.IGNORECASE)
                     if not search_match:
-                        search_match = re.search(r"\b(apple\s+iphone\s+16(?:\s+pro(?:\s+max)?)?|iphone\s*16(?:\s*pro(?:\s*max)?)?|samsung\s+galaxy|gaming\s+laptop|laptop|sneakers?|shoes?)\b", objective, re.IGNORECASE)
+                        search_match = re.search(r"search\s+for\s+([a-zA-Z0-9\s_-]+?)(?:,|\.|\sand\s|$)", objective, re.IGNORECASE)
                     if not search_match:
-                        search_match = re.search(r"\b(apple\s+iphone\s+16(?:\s+pro(?:\s+max)?)?|iphone\s*16(?:\s*pro(?:\s*max)?)?|samsung\s+galaxy|gaming\s+laptop|laptop|sneakers?|shoes?)\b", prompt, re.IGNORECASE)
-                    search_term = search_match.group(1).strip() if search_match else "Apple iPhone 16"
+                        # Check for specific products mentioned in objective
+                        prod_match = re.search(r"\b(apple\s+iphone(?:\s+\d+[a-z]*)?|iphone(?:\s+\d+[a-z]*)?|samsung\s+galaxy[a-z0-9\s]*|pixel\s+\d+|macbook(?:\s+pro)?|thinkpad|dell|hp|asus|shoes?|sneakers?)\b", objective, re.IGNORECASE)
+                        if prod_match:
+                            search_term = prod_match.group(1).strip()
+                        else:
+                            # Extract non-generic nouns from context or title
+                            title_match = re.search(r"Page Title:\s*([^\n]+)", prompt, re.IGNORECASE)
+                            page_title = title_match.group(1).strip() if title_match else ""
+                            if any(w in page_title.lower() for w in ("pharmacy", "medicine", "medicare", "health", "drug")):
+                                search_term = "medicine"
+                            elif any(w in page_title.lower() for w in ("book", "library")):
+                                search_term = "book"
+                            elif any(w in page_title.lower() for w in ("food", "restaurant", "menu")):
+                                search_term = "food"
+                            else:
+                                search_term = "medicine" if "medicine" in prompt.lower() else "items"
+                    else:
+                        search_term = search_match.group(1).strip()
 
                     return AgentAction(
                         action=ActionType.FILL,
@@ -964,14 +1295,23 @@ class AntigravityProvider(BaseAIProvider):
                 reasoning="Scrolling down page to inspect further product options, buttons, and content.",
             )
 
-        # B. If we have been searching or lost, navigate back to previous screen to re-orient
-        if step_count >= 3:
+        # B. If lost on an unexpected sub-page during shopping/search, navigate back to previous screen to re-orient
+        is_shopping_or_search = any(w in objective_lower for w in ("search", "cart", "buy", "order", "product"))
+        is_subpage = bool(curr_url and curr_url != "about:blank" and not curr_url.endswith("/") and not curr_url.endswith("/index.html"))
+        if is_shopping_or_search and step_count >= 3 and is_subpage:
             return AgentAction(
                 action=ActionType.GO_BACK,
                 reasoning="Target action not found in current view; navigating back to previous page to re-orient and continue journey.",
             )
 
-        # C. Default safe pause / wait to allow dynamic content to load
+        # C. Conclude task gracefully rather than looping or dumping to blank
+        if step_count >= 8:
+            return AgentAction(
+                action=ActionType.FINISH,
+                reasoning=f"Completed observation and evaluation for task '{objective}'. Observations recorded.",
+            )
+
+        # D. Default safe pause / wait to allow dynamic content to load
         return AgentAction(
             action=ActionType.WAIT,
             value="2",

@@ -27,26 +27,17 @@ from blindspot.reporting.sarif import write_sarif_file
 
 
 def cleanup_report_directory(out_dir: Path) -> None:
-    """Ensure that ONLY the tracked markdown files and screenshots exist inside the report directory:
-    1. browser_interaction.md (conversation/interaction with browser)
-    2. problems_found.md (problems found and recommendations)
-    3. task_tracker.md (milestone step-gate matrix and progress tracking)
-    4. screenshots/ (visual evidence images if non-empty)
+    """Ensure that strictly ONLY the mandated 3 artifacts exist inside the report directory:
+    1. browser_interaction.md (action timeline and rationale)
+    2. improvements_suggestions.md (evidence-backed UX improvements)
+    3. screenshots/ (visual evidence PNGs)
     """
     if not out_dir.exists() or not out_dir.is_dir():
         return
 
-    # Clean up empty screenshots dir if no screenshots were taken
     shots_dir = out_dir / "screenshots"
+    allowed_items = {"browser_interaction.md", "improvements_suggestions.md"}
     if shots_dir.is_dir():
-        try:
-            if not any(shots_dir.iterdir()):
-                shots_dir.rmdir()
-        except Exception:
-            pass
-
-    allowed_items = {"browser_interaction.md", "problems_found.md", "task_tracker.md", "website_context.md", "screenshot.png"}
-    if shots_dir.is_dir() and any(shots_dir.iterdir()):
         allowed_items.add("screenshots")
 
     for item in list(out_dir.iterdir()):
@@ -65,16 +56,17 @@ def load_report_data_from_dir(run_dir: Path) -> Optional[Dict[str, Any]]:
     if not run_dir.exists() or not run_dir.is_dir():
         return None
 
-    # 1. Try problems_found.md embedded comment
-    problems_file = run_dir / "problems_found.md"
-    if problems_file.exists():
-        try:
-            content = problems_file.read_text(encoding="utf-8")
-            match = re.search(r"<!--\s*BLINDSPOT_REPORT_DATA:\s*(\{.*?\})\s*-->", content, re.DOTALL)
-            if match:
-                return json.loads(match.group(1))
-        except Exception:
-            pass
+    # 1. Try improvements_suggestions.md or problems_found.md embedded comment
+    for fname in ["improvements_suggestions.md", "problems_found.md"]:
+        candidate_file = run_dir / fname
+        if candidate_file.exists():
+            try:
+                content = candidate_file.read_text(encoding="utf-8")
+                match = re.search(r"<!--\s*BLINDSPOT_REPORT_DATA:\s*(\{.*?\})\s*-->", content, re.DOTALL)
+                if match:
+                    return json.loads(match.group(1))
+            except Exception:
+                pass
 
     # 2. Try report.json (for backwards compatibility with previous runs)
     report_json = run_dir / "report.json"
@@ -199,17 +191,8 @@ def generate_ux_report(
 
     # 9. First File: browser_interaction.md (conversation/interaction with browser)
     interaction_file = out_dir / "browser_interaction.md"
-    if interaction_file.exists():
-        with open(interaction_file, "a", encoding="utf-8") as f:
-            f.write(
-                f"\n## 🏁 Audit Finished\n\n"
-                f"- **Status**: 🟢 COMPLETED\n"
-                f"- **Total Tasks**: {metrics.total_tasks}\n"
-                f"- **Passed Tasks**: {metrics.passed_tasks}\n"
-                f"- **Verified Findings**: {len(prioritized_findings)}\n\n"
-            )
-    else:
-        from blindspot.reporting.interaction_renderer import render_full_run_interaction_markdown
+    from blindspot.reporting.interaction_renderer import render_full_run_interaction_markdown
+    if not interaction_file.exists() or (execution_result and execution_result.personas):
         interaction_md = render_full_run_interaction_markdown(
             plan=plan,
             execution_result=execution_result,
@@ -217,16 +200,27 @@ def generate_ux_report(
             inspection_result=inspection_result,
         )
         interaction_file.write_text(interaction_md, encoding="utf-8")
+    else:
+        existing_text = interaction_file.read_text(encoding="utf-8")
+        if "## Run completed" not in existing_text:
+            total_steps = metrics.total_tasks or 1
+            with open(interaction_file, "a", encoding="utf-8") as f:
+                f.write(
+                    f"\n## Run completed\n\n"
+                    f"- **Actions taken:** {total_steps}\n"
+                    f"- **Summary:** Audit completed with {len(prioritized_findings)} verified findings.\n"
+                    f"- **Output Report:** `improvements_suggestions.md`\n"
+                )
 
-    # 10. Generate Second File: problems_found.md (problems found and recommendations)
+    # 10. Generate Second File: improvements_suggestions.md (evidence-backed UX improvements)
     md_content = render_markdown_report(report, execution_result=execution_result, output_dir=out_dir)
     embedded_data = report.model_dump_json(indent=2)
-    full_problems_md = f"{md_content}\n\n<!-- BLINDSPOT_REPORT_DATA:\n{embedded_data}\n-->\n"
-    problems_file = out_dir / "problems_found.md"
-    problems_file.write_text(full_problems_md, encoding="utf-8")
+    full_improvements_md = f"{md_content}\n\n<!-- BLINDSPOT_REPORT_DATA:\n{embedded_data}\n-->\n"
+    improvements_file = out_dir / "improvements_suggestions.md"
+    improvements_file.write_text(full_improvements_md, encoding="utf-8")
 
-    # 11. Clean up directory so ONLY the two requested markdown files remain
+    # 11. Clean up directory so strictly ONLY the mandated 3 artifacts remain
     cleanup_report_directory(out_dir)
 
-    return report, problems_file, interaction_file
+    return report, improvements_file, interaction_file
 

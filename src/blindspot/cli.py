@@ -195,7 +195,16 @@ def main(
         typer.Option(
             "--personas",
             "-p",
-            help="Number of AI user personas to generate and test (e.g. 1 for quick testing).",
+            help="Number of AI user personas to generate and test (default: 1).",
+            show_default=False,
+        ),
+    ] = None,
+    persona: Annotated[
+        Optional[str],
+        typer.Option(
+            "--persona",
+            "-P",
+            help="Choose a specific persona by name or archetype (e.g. 'elena', 'ecommerce', 'mobile', 'accessibility', 'tech', 'skeptical', 'first-time').",
             show_default=False,
         ),
     ] = None,
@@ -274,6 +283,14 @@ def main(
             show_default=False,
         ),
     ] = False,
+    live: Annotated[
+        bool,
+        typer.Option(
+            "--live",
+            help="Run interactive live browser loop controlled by Antigravity.",
+            show_default=False,
+        ),
+    ] = False,
     version: Annotated[
         Optional[bool],
         typer.Option(
@@ -299,7 +316,7 @@ def main(
         _, ai_prov, ai_mod = parse_model_route(model)
 
     effective_headed = False if headless else True
-    effective_personas = personas if personas is not None else 1
+    effective_personas = max(1, min(int(personas if personas is not None else 1), 5))
     effective_concurrency = concurrency if concurrency is not None else 1
 
     if iteration and not output_dir:
@@ -311,6 +328,17 @@ def main(
         output_dir = reports_base / iter_name
 
     if effective_target:
+        if live:
+            live_cmd(
+                target_arg=effective_target,
+                goal=effective_instruction or "Audit website usability and user journey",
+                persona=persona,
+                personas=effective_personas,
+                output_dir=str(output_dir) if output_dir else None,
+                allow_local=allow_local,
+            )
+            return
+
         inspect(
             url=effective_target,
             context=effective_instruction,
@@ -318,6 +346,7 @@ def main(
             output_dir=output_dir,
             headed=effective_headed,
             personas=effective_personas,
+            persona=persona,
             concurrency=effective_concurrency,
             skip_ai=skip_ai,
             skip_execution=skip_execution,
@@ -360,6 +389,7 @@ def main(
         output_dir=output_dir,
         headed=effective_headed,
         personas=effective_personas,
+        persona=persona,
         concurrency=effective_concurrency,
         allow_local=allow_local,
         ai_provider=ai_prov,
@@ -819,6 +849,15 @@ def inspect(
             show_default=True,
         ),
     ] = 1,
+    persona: Annotated[
+        Optional[str],
+        typer.Option(
+            "--persona",
+            "-P",
+            help="Choose a specific persona by name or archetype (e.g. 'elena', 'ecommerce', 'mobile', 'accessibility', 'tech', 'skeptical', 'first-time').",
+            show_default=False,
+        ),
+    ] = None,
     concurrency: Annotated[
         int,
         typer.Option(
@@ -946,8 +985,9 @@ def inspect(
     ] = "auto",
 ) -> None:
     """Run website inspection, capture page state, screenshot, elements, and synthesize AI personas."""
-    # Determine effective headless mode
-    effective_headless = True if headless else False
+    # Determine effective headless mode (visible live browser window is the strict default)
+    effective_headless = True if (headless or not headed) else False
+    effective_personas = max(1, min(int(personas), 5))
 
     # Determine effective target and context
     effective_url = target_url or target or url
@@ -1082,14 +1122,15 @@ def inspect(
         # Instantly create browser_interaction.md the moment auditing starts
         live_md = run_output_dir / "browser_interaction.md"
         init_header = (
-            f"# 🧭 BlindSpot Browser Interaction Log\n\n"
-            f"- **Target Website**: [{effective_url.strip()}]({effective_url.strip()})\n"
-            f"- **Auditing Context**: {resolved_context}\n"
-            f"- **Started**: `{datetime.now(timezone.utc).isoformat()}`\n"
-            f"- **Browser Automation**: Playwright {'Headed / Native Visible' if not effective_headless else 'Headless'}\n"
-            f"- **Inspection Mode**: Screenshot-Driven Visual Analysis\n"
-            f"- **Status**: 🟡 IN PROGRESS\n\n"
-            f"---\n\n"
+            f"# Live Browser Interaction\n\n"
+            f"- **Target URL:** {effective_url.strip()}\n"
+            f"- **Current URL:** {effective_url.strip()}\n"
+            f"- **Page Title:** Initializing...\n"
+            f"- **Audit Goal:** {resolved_context}\n"
+            f"- **Status:** IN PROGRESS\n\n"
+            f"## Step 0: Initial page observation\n\n"
+            f"Target website loaded into live browser. Ready for inspection.\n\n"
+            f"![Initial page](screenshots/step-000.png)\n"
         )
         live_md.write_text(init_header, encoding="utf-8")
 
@@ -1099,11 +1140,11 @@ def inspect(
         url=inspect_input_config.url,
         browser=selected_browser,
         headed=not effective_headless,
-        personas=personas,
+        personas=effective_personas,
         concurrency=concurrency,
     )
 
-    # 5. Launch Browser Inspection (always headless to prevent window flash before persona execution)
+    # 5. Launch Browser Inspection (always visible live window)
     try:
         with console.status("[bold cyan]Crawling target DOM and capturing viewport state...[/bold cyan]", spinner="dots"):
             result = inspect_website(
@@ -1111,7 +1152,7 @@ def inspect(
                 context=inspect_input_config.context,
                 output_dir=run_output_dir,
                 browser_type=selected_browser,
-                headless=True,
+                headless=effective_headless,
                 allow_local=allow_local,
             )
     except Exception as exc:
@@ -1172,29 +1213,32 @@ def inspect(
             except Exception:
                 pass
 
+        if not personas_file_to_use and persona:
+            from blindspot.personas.generator import find_specific_persona_file
+            personas_file_to_use = find_specific_persona_file(persona)
+
+        import inspect as py_inspect
+        sig = py_inspect.signature(generate_personas_and_tasks)
+        supports_persona_name = "persona_name" in sig.parameters or any(p.kind == py_inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values())
+
+        gen_kwargs = {
+            "inspection_result": result,
+            "provider": provider_instance,
+            "num_personas": effective_personas,
+            "output_dir": run_output_dir,
+        }
         if personas_file_to_use:
-            with console.status(
-                f"[bold cyan]Loading manual user personas from {personas_file_to_use.name}...[/bold cyan]",
-                spinner="dots",
-            ):
-                plan = generate_personas_and_tasks(
-                    inspection_result=result,
-                    provider=provider_instance,
-                    num_personas=personas,
-                    output_dir=run_output_dir,
-                    personas_file=personas_file_to_use,
-                )
-        else:
-            with console.status(
-                f"[bold cyan]Synthesizing {personas} AI user personas & test tasks ({provider_instance.name})...[/bold cyan]",
-                spinner="dots",
-            ):
-                plan = generate_personas_and_tasks(
-                    inspection_result=result,
-                    provider=provider_instance,
-                    num_personas=personas,
-                    output_dir=run_output_dir,
-                )
+            gen_kwargs["personas_file"] = personas_file_to_use
+        if persona and supports_persona_name:
+            gen_kwargs["persona_name"] = persona
+
+        status_msg = (
+            f"Loading manual user personas from {personas_file_to_use.name}..."
+            if personas_file_to_use
+            else f"Synthesizing {effective_personas} AI user persona(s) & test tasks ({provider_instance.name})..."
+        )
+        with console.status(f"[bold cyan]{status_msg}[/bold cyan]", spinner="dots"):
+            plan = generate_personas_and_tasks(**gen_kwargs)
         print_personas_summary(plan)
     except AIProviderError as exc:
         print_error(
@@ -1484,12 +1528,32 @@ def mcp_cmd(
     help="Launch an agentic live browser session that writes screenshots to Markdown and waits for Antigravity's instructions.",
 )
 def live_cmd(
-    target: Annotated[
-        str,
+    target_arg: Annotated[
+        Optional[str],
         typer.Argument(
+            metavar="[URL]",
             help="Target website URL to inspect (e.g. https://www.flipkart.com).",
+            show_default=False,
         ),
-    ],
+    ] = None,
+    target: Annotated[
+        Optional[str],
+        typer.Option(
+            "--target",
+            "-t",
+            help="Target website URL to inspect.",
+            show_default=False,
+        ),
+    ] = None,
+    url: Annotated[
+        Optional[str],
+        typer.Option(
+            "--url",
+            "-u",
+            help="Alias for --target.",
+            show_default=False,
+        ),
+    ] = None,
     goal: Annotated[
         str,
         typer.Option(
@@ -1497,10 +1561,30 @@ def live_cmd(
             "-g",
             "--context",
             "-c",
+            "--instruction",
+            "-i",
             help="Audit goal or specific user task to achieve.",
             show_default=True,
         ),
     ] = "Audit website usability and user journey",
+    persona: Annotated[
+        Optional[str],
+        typer.Option(
+            "--persona",
+            "-P",
+            help="Specify a persona profile or archetype for live audit (default: 'elena').",
+            show_default=False,
+        ),
+    ] = None,
+    personas: Annotated[
+        int,
+        typer.Option(
+            "--personas",
+            "-p",
+            help="Number of personas to test (default: 1).",
+            show_default=False,
+        ),
+    ] = 1,
     output_dir: Annotated[
         Optional[str],
         typer.Option(
@@ -1526,11 +1610,27 @@ def live_cmd(
     ] = 1800,
 ) -> None:
     """Run interactive live browser loop controlled by Antigravity via Markdown & next_action.json."""
+    try:
+        from blindspot.runtime.desktop_utils import ensure_default_desktop
+        ensure_default_desktop()
+    except Exception:
+        pass
+
+    effective_target = target_arg or target or url
+    if not effective_target:
+        print_error(
+            title="Missing Target URL",
+            message="Target website URL was not provided.",
+            suggestion="Specify a target URL (e.g. blindspot live https://example.com or blindspot live -t https://example.com).",
+        )
+        raise typer.Exit(code=1)
+
     from blindspot.mcp.live_browser import run_live_bridge
 
+    effective_goal = f"{goal} (Persona: {persona})" if persona and persona.lower() not in goal.lower() else goal
     run_dir = run_live_bridge(
-        url=target,
-        goal=goal,
+        url=effective_target,
+        goal=effective_goal,
         output_dir=Path(output_dir) if output_dir else None,
         allow_local=allow_local,
         timeout_seconds=timeout,
@@ -1543,14 +1643,41 @@ def live_cmd(
     help="Alias for 'live' command to drive step-by-step browser audits.",
 )
 def step_cmd(
-    target: Annotated[str, typer.Argument(help="Target website URL.")],
-    goal: Annotated[str, typer.Option("--goal", "-g", "--context", "-c", help="Audit goal.")] = "Audit website usability",
+    target_arg: Annotated[
+        Optional[str],
+        typer.Argument(
+            metavar="[URL]",
+            help="Target website URL.",
+            show_default=False,
+        ),
+    ] = None,
+    target: Annotated[
+        Optional[str],
+        typer.Option(
+            "--target",
+            "-t",
+            help="Target website URL to inspect.",
+            show_default=False,
+        ),
+    ] = None,
+    url: Annotated[
+        Optional[str],
+        typer.Option(
+            "--url",
+            "-u",
+            help="Alias for --target.",
+            show_default=False,
+        ),
+    ] = None,
+    goal: Annotated[str, typer.Option("--goal", "-g", "--context", "-c", "--instruction", "-i", help="Audit goal.")] = "Audit website usability",
+    persona: Annotated[Optional[str], typer.Option("--persona", "-P", help="Specify a persona profile or archetype.")] = None,
+    personas: Annotated[int, typer.Option("--personas", "-p", help="Number of personas to test.")] = 1,
     output_dir: Annotated[Optional[str], typer.Option("--output-dir", "-o", help="Custom output directory.")] = None,
     allow_local: Annotated[bool, typer.Option("--allow-local", help="Allow loopback.")] = False,
     timeout: Annotated[int, typer.Option("--timeout", help="Timeout in seconds.")] = 1800,
 ) -> None:
     """Alias for live_cmd."""
-    live_cmd(target=target, goal=goal, output_dir=output_dir, allow_local=allow_local, timeout=timeout)
+    live_cmd(target_arg=target_arg, target=target, url=url, goal=goal, persona=persona, personas=personas, output_dir=output_dir, allow_local=allow_local, timeout=timeout)
 
 
 @app.command(
@@ -1762,6 +1889,13 @@ def main_entry() -> None:
     """Entry point for CLI that automatically routes bare URL arguments to inspect subcommand."""
     import sys
 
+    # On Windows, ensure execution on the visible interactive user desktop (WinSta0\Default)
+    try:
+        from blindspot.runtime.desktop_utils import ensure_default_desktop
+        ensure_default_desktop()
+    except Exception:
+        pass
+
     if len(sys.argv) > 1:
         first_arg = sys.argv[1].strip()
         known_commands = {
@@ -1785,8 +1919,8 @@ def main_entry() -> None:
             "-v",
         }
         if first_arg not in known_commands and not first_arg.startswith("-"):
-            # It's a bare URL or positional target, rewrite to inspect
-            sys.argv.insert(1, "inspect")
+            # It's a bare URL or positional target, rewrite to live agentic audit
+            sys.argv.insert(1, "live")
     app()
 
 

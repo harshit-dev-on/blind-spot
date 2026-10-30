@@ -60,7 +60,7 @@ def run_setup_wizard() -> None:
     current_route = f"{p}/{m}"
 
     console.print()
-    console.print("[bold white]BlindSpot Setup[/bold white]")
+    console.print("[bold white]BlindSpot AI Setup[/bold white]")
     console.print("[dim]Choose a local provider for setup without cloud credentials, or enter a provider/model route.[/dim]\n")
     console.print("[dim]Popular models:[/dim]")
     console.print("  • [bold cyan]antigravity/antigravity-brain[/bold cyan] [dim](Default, no API key)[/dim]")

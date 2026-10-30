@@ -14,7 +14,13 @@ import time
 from typing import Any, Optional, Union
 from uuid import uuid4
 
-from mcp.server.mcpserver.utilities.types import Image
+try:
+    from mcp.server.fastmcp.utilities.types import Image
+except ImportError:
+    try:
+        from mcp.server.mcpserver.utilities.types import Image
+    except ImportError:
+        Image = Any  # type: ignore
 from mcp_types import CallToolResult, ImageContent, TextContent
 
 from blindspot.execution.safety import is_action_destructive, validate_navigation_url
@@ -24,6 +30,10 @@ from blindspot.utils.console import console
 MAX_PAGE_TEXT = 18_000
 MAX_CONTROLS = 120
 MAX_ACTIONS = 100
+SENSITIVE_AUTH_TARGET = re.compile(
+    r"(?:^|[\s_.-])(password|passwd|pwd|otp|one[\s_.-]?time|verification[\s_.-]?code|credit[\s_.-]?card|card[\s_.-]?number|cvv|cvc|secret|auth[\s_.-]?token)(?:$|[\s_.-])",
+    re.I,
+)
 SENSITIVE_TARGET = re.compile(
     r"(?:^|[\s_.-])(password|passwd|pwd|otp|one[\s_.-]?time|verification[\s_.-]?code|phone[\s_.-]?(?:number|no)?|mobile[\s_.-]?(?:number|no)?|telephone|credit[\s_.-]?card|card[\s_.-]?number|cvv|cvc|secret|auth[\s_.-]?token)(?:$|[\s_.-])",
     re.I,
@@ -101,7 +111,7 @@ def _page_observation(
         "screenshot_path": str(screenshot_path.resolve()),
         "output_dir": str(output_dir.resolve()),
     }
-    _write_context(output_dir, observation)
+    # Retain structured observation in memory for the agent without polluting run directory
     return observation
 
 
@@ -186,12 +196,15 @@ def perform_browser_action(page: Any, payload: dict[str, Any], allow_local: bool
     value = payload.get("value", "")
     rationale = payload.get("rationale", "").strip()
 
-    destructive, reason = is_action_destructive(target, value)
+    destructive, reason = is_action_destructive(target, value, allow_local=allow_local)
     if destructive:
         raise PermissionError(reason or "Potentially destructive action blocked.")
 
     # Guard against credential, phone, OTP, or secret entry
     if action == "fill":
+        metadata_str = f"{target} {value}".lower()
+        is_delivery_or_demo = any(k in metadata_str for k in ("address", "delivery", "shipping", "demo", "test")) or allow_local
+
         is_sensitive_target = (
             bool(SENSITIVE_TARGET.search(target))
             and not any(k in target.lower() for k in ("search", "find", "query"))
@@ -201,7 +214,19 @@ def perform_browser_action(page: Any, payload: dict[str, Any], allow_local: bool
             bool(SENSITIVE_TARGET.search(value))
             and not any(k in value.lower() for k in ("iphone", "phone case", "headphone", "earphone", "search"))
         )
-        if is_sensitive_target or is_phone_number_val or is_sensitive_val:
+        is_secret_token = bool(SENSITIVE_AUTH_TARGET.search(metadata_str)) and not any(
+            k in metadata_str for k in ("search", "find", "query")
+        )
+
+        # Pure secrets (passwords, OTPs, payment card numbers) are blocked everywhere unless mock/demo
+        if is_secret_token and not (allow_local and any(k in metadata_str for k in ("demo", "test", "mock"))):
+            raise PermissionError(
+                "Filling credentials, phone numbers, OTPs, payment details, or secrets is blocked. "
+                "Ask the user to handle authentication directly."
+            )
+
+        # Phone numbers on external sites without allow_local are blocked unless part of delivery/demo
+        if (is_sensitive_target or is_phone_number_val or is_sensitive_val) and not is_delivery_or_demo:
             raise PermissionError(
                 "Filling credentials, phone numbers, OTPs, payment details, or secrets is blocked. "
                 "Ask the user to handle authentication directly."
@@ -222,7 +247,13 @@ def perform_browser_action(page: Any, payload: dict[str, Any], allow_local: bool
             pass
         page.wait_for_timeout(2000)
     elif action == "go_back":
+        prev_url = page.url
         page.go_back(wait_until="domcontentloaded", timeout=30000)
+        if page.url == "about:blank" or not page.url.startswith(("http://", "https://")):
+            try:
+                page.goto(prev_url, wait_until="domcontentloaded", timeout=30000)
+            except Exception:
+                pass
         try:
             page.wait_for_load_state("load", timeout=3000)
         except Exception:
@@ -237,6 +268,14 @@ def perform_browser_action(page: Any, payload: dict[str, Any], allow_local: bool
         delta = amount if direction == "down" else -amount
         page.evaluate("delta => window.scrollBy({top: delta, behavior: 'smooth'})", delta)
         page.wait_for_timeout(700)
+    elif action == "hover":
+        if not target:
+            raise ValueError("A target is required for the hover action.")
+        locator = resolve_locator(page, target, strategy)
+        locator.first.wait_for(state="visible", timeout=7000)
+        locator.first.scroll_into_view_if_needed()
+        locator.first.hover(timeout=10000)
+        page.wait_for_timeout(500)
     elif action in ("click", "fill", "press"):
         if not target:
             raise ValueError(f"A target is required for the {action} action.")
@@ -255,10 +294,22 @@ def perform_browser_action(page: Any, payload: dict[str, Any], allow_local: bool
                     labels: Array.from(e.labels || []).map(l => l.innerText).join(' ')
                 })"""
             )
-            field_identity = " ".join(str(item) for item in metadata.values())
-            if SENSITIVE_TARGET.search(field_identity) and not any(k in field_identity.lower() for k in ("search", "find", "query")):
+            field_identity = " ".join(str(item) for item in metadata.values()).lower()
+            is_field_delivery_or_demo = any(k in field_identity for k in ("address", "delivery", "shipping", "demo", "test")) or allow_local
+            is_field_secret = bool(SENSITIVE_AUTH_TARGET.search(field_identity)) and not any(
+                k in field_identity for k in ("search", "find", "query")
+            )
+            is_field_phone = bool(SENSITIVE_TARGET.search(field_identity)) and not any(
+                k in field_identity for k in ("search", "find", "query")
+            )
+            if is_field_secret and not (allow_local and any(k in field_identity for k in ("demo", "test", "mock"))):
                 raise PermissionError(
-                    "Filling credentials, phone numbers, OTPs, secrets, or payment fields is blocked. "
+                    "Filling credentials, phone numbers, OTPs, payment details, or secrets is blocked. "
+                    "Ask the user to handle authentication directly."
+                )
+            if is_field_phone and not is_field_delivery_or_demo:
+                raise PermissionError(
+                    "Filling credentials, phone numbers, OTPs, payment details, or secrets is blocked. "
                     "Ask the user to handle authentication directly."
                 )
 
@@ -482,19 +533,31 @@ class _BrowserWorker:
                             self._append_action(payload, observation)
                             future.set_result(observation)
                         elif name == "finish":
-                            report = "# Website Audit\n\n"
-                            if payload["summary"].strip():
-                                report += payload["summary"].strip() + "\n\n"
-                            report += payload["findings_markdown"].strip() + "\n"
-                            (self.output_dir / "problems_found.md").write_text(report, encoding="utf-8")
+                            summary_text = payload.get("summary", "").strip()
+                            findings_text = payload.get("findings_markdown", "").strip()
+                            if not findings_text.startswith("# UX Improvement Suggestions"):
+                                report = (
+                                    f"# UX Improvement Suggestions: {self.audit_context}\n\n"
+                                    f"- **Session ID:** `{self.session_id}`\n"
+                                    f"- **Date:** `{datetime.now(timezone.utc).isoformat()}`\n\n"
+                                    f"## 1. Executive Summary\n{summary_text or 'Audit completed.'}\n\n"
+                                    f"## 2. Interactive Journey Summary\n- **Total Steps Taken:** {self.action_count}\n\n"
+                                    f"## 3. Improvement Suggestions\n{findings_text}\n"
+                                )
+                            else:
+                                report = findings_text + "\n"
+
+                            improvements_path = self.output_dir / "improvements_suggestions.md"
+                            improvements_path.write_text(report, encoding="utf-8")
+                            (self.output_dir / "problems_found.md").unlink(missing_ok=True)
+                            (self.output_dir / "website_context.md").unlink(missing_ok=True)
                             self._append_completion()
                             future.set_result({
                                 "session_id": self.session_id,
                                 "status": "completed",
                                 "output_dir": str(self.output_dir.resolve()),
-                                "website_context": str((self.output_dir / "website_context.md").resolve()),
                                 "interaction_log": str((self.output_dir / "browser_interaction.md").resolve()),
-                                "final_findings": str((self.output_dir / "problems_found.md").resolve()),
+                                "improvements_suggestions": str(improvements_path.resolve()),
                                 "screenshots_dir": str((self.output_dir / "screenshots").resolve()),
                             })
                             active = False
@@ -504,7 +567,6 @@ class _BrowserWorker:
                                 "session_id": self.session_id,
                                 "status": "closed",
                                 "output_dir": str(self.output_dir.resolve()),
-                                "website_context": str((self.output_dir / "website_context.md").resolve()),
                                 "interaction_log": str((self.output_dir / "browser_interaction.md").resolve()),
                                 "screenshots_dir": str((self.output_dir / "screenshots").resolve()),
                             })
@@ -544,7 +606,12 @@ class _BrowserWorker:
 
     def _append_completion(self, status: str = "completed") -> None:
         with (self.output_dir / "browser_interaction.md").open("a", encoding="utf-8") as handle:
-            handle.write(f"\n## Run {status}\n\n- **Actions taken:** {self.action_count}\n")
+            handle.write(
+                f"\n## Run {status}\n\n"
+                f"- **Actions taken:** {self.action_count}\n"
+                f"- **Summary:** Live browser session {status}.\n"
+                f"- **Output Report:** `improvements_suggestions.md`\n"
+            )
 
 
 class LiveBrowserSessions:
@@ -632,7 +699,10 @@ def result_with_screenshot(payload: dict[str, Any]) -> CallToolResult:
     screenshot = payload.get("screenshot_path")
     if screenshot and Path(screenshot).exists():
         try:
-            content.append(Image(path=screenshot).to_image_content())
+            import base64
+            img_bytes = Path(screenshot).read_bytes()
+            img_b64 = base64.b64encode(img_bytes).decode("utf-8")
+            content.append(ImageContent(type="image", data=img_b64, mimeType="image/png"))
         except Exception:
             pass
     return CallToolResult(content=content)
@@ -744,10 +814,11 @@ def run_live_bridge(
             "# Live Browser Interaction\n\n"
             f"- **Target URL:** {url}\n"
             f"- **Current URL:** {page.url}\n"
-            f"- **Page title:** {page.title()}\n"
+            f"- **Page Title:** {page.title()}\n"
+            f"- **Audit Goal:** {goal}\n"
             f"- **Status:** IN PROGRESS\n\n"
             "## Step 0: Initial page observation\n\n"
-            "No interaction has been performed yet.\n\n"
+            "Target website loaded into live browser. Ready for inspection.\n\n"
             "![Initial page](screenshots/step-000.png)\n",
             encoding="utf-8",
         )
@@ -764,14 +835,14 @@ def run_live_bridge(
                 "screenshot_path": str((screenshots_dir / f"step-{step:03d}.png").resolve()),
                 "relative_screenshot": f"screenshots/step-{step:03d}.png",
                 "interaction_markdown": str(interaction_md.resolve()),
-                "website_context_markdown": str((resolved_dir / "website_context.md").resolve()),
                 "auth_barrier_detected": observation.get("auth_barrier_detected", False),
                 "controls_count": len(observation.get("controls", [])),
                 "top_controls": observation.get("controls", [])[:30],
                 "last_action_error": last_error,
                 "instruction": (
-                    f"Antigravity: Inspect step-{step:03d}.png and browser_interaction.md. "
-                    "Decide the next single action, then write next_action.json into this directory."
+                    f"Antigravity: Inspect step-{step:03d}.png and browser_interaction.md (living context window). "
+                    "Observe what is currently visible on screen, reason like a human user from Elena's perspective, "
+                    "decide the single next logical action, then write next_action.json into this directory."
                 ),
                 "schema": {
                     "action": "click | fill | type | press | scroll | hover | wait | finish",
@@ -818,13 +889,29 @@ def run_live_bridge(
 
                     # Completion condition
                     if act_type in ("finish", "stop", "complete"):
-                        summary = action_payload.get("summary", "Live audit completed.")
-                        findings = action_payload.get("findings_markdown") or action_payload.get("findings", "")
-                        report = f"# Website Audit\n\n{summary}\n\n{findings}\n"
-                        (resolved_dir / "problems_found.md").write_text(report, encoding="utf-8")
+                        summary = action_payload.get("summary", "Live audit completed.").strip()
+                        findings = (action_payload.get("findings_markdown") or action_payload.get("findings", "")).strip()
+                        if not findings.startswith("# UX Improvement Suggestions"):
+                            report = (
+                                f"# UX Improvement Suggestions: {url}\n\n"
+                                f"- **Target URL:** {url}\n"
+                                f"- **Audit Goal:** {goal}\n"
+                                f"- **Date:** {datetime.now(timezone.utc).isoformat()}\n\n"
+                                f"## 1. Executive Summary\n{summary}\n\n"
+                                f"## 2. Interactive Journey Summary\n- **Total Steps Taken:** {step}\n- **Key Milestones Explored:** Explored primary user flow in visible live browser across {step} action step(s).\n\n"
+                                f"## 3. Improvement Suggestions\n*(Every suggestion must be backed by an observed screenshot evidence link)*\n\n"
+                                f"{findings}\n"
+                            )
+                        else:
+                            report = findings + "\n"
+
+                        improvements_file = resolved_dir / "improvements_suggestions.md"
+                        improvements_file.write_text(report, encoding="utf-8")
+                        (resolved_dir / "problems_found.md").unlink(missing_ok=True)
+                        (resolved_dir / "website_context.md").unlink(missing_ok=True)
 
                         with interaction_md.open("a", encoding="utf-8") as handle:
-                            handle.write(f"\n## Run completed\n\n- **Actions taken:** {step}\n- **Summary:** {summary}\n")
+                            handle.write(f"\n## Run completed\n\n- **Actions taken:** {step}\n- **Summary:** {summary}\n- **Output Report:** `improvements_suggestions.md`\n")
 
                         # Write completed status
                         (resolved_dir / "action_needed.json").write_text(
@@ -832,9 +919,9 @@ def run_live_bridge(
                                 "status": "completed",
                                 "session_id": resolved_dir.name,
                                 "total_steps": step,
-                                "problems_found": str((resolved_dir / "problems_found.md").resolve()),
+                                "improvements_suggestions": str(improvements_file.resolve()),
                                 "interaction_markdown": str(interaction_md.resolve()),
-                                "website_context": str((resolved_dir / "website_context.md").resolve()),
+                                "screenshots_dir": str(screenshots_dir.resolve()),
                             }, indent=2),
                             encoding="utf-8",
                         )
@@ -871,6 +958,11 @@ def run_live_bridge(
 
                     page = _BrowserWorker._get_active_page(context, page)
                     page.bring_to_front()
+                    try:
+                        from blindspot.runtime.window_utils import bring_browser_window_to_foreground
+                        bring_browser_window_to_foreground(stay_topmost=True)
+                    except Exception:
+                        pass
 
                     post_shot = screenshots_dir / f"step-{step:03d}.png"
                     observation = _page_observation(

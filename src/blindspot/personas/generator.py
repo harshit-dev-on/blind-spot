@@ -108,9 +108,11 @@ def build_system_prompt() -> str:
     )
 
 
-def build_user_prompt(context: str, website_data: str, num_personas: int) -> str:
+def build_user_prompt(context: str, website_data: str, num_personas: int, persona_name: Optional[str] = None) -> str:
     """Construct user prompt combining context and fenced website observations."""
+    persona_line = f"TARGET PERSONA ARCHETYPE: {persona_name}\n\n" if persona_name else ""
     return (
+        f"{persona_line}"
         f"WEBSITE INTENDED CONTEXT & AUDIENCE:\n"
         f"\"{context.strip()}\"\n\n"
         f"OBSERVED WEBSITE DATA:\n"
@@ -156,8 +158,9 @@ class PersonaGenerator:
     def generate(
         self,
         inspection_result: BrowserInspectionResult,
-        num_personas: int = 3,
+        num_personas: int = 1,
         output_dir: Optional[Path] = None,
+        persona_name: Optional[str] = None,
     ) -> PersonaPlan:
         """Synthesize personas and tasks based on website inspection data.
 
@@ -166,6 +169,7 @@ class PersonaGenerator:
             num_personas: Desired number of personas (clamped between 1 and 5).
             output_dir: Optional directory to save 'personas.json'. If not provided,
                         saves adjacent to inspection_result.json.
+            persona_name: Optional requested persona name or archetype.
 
         Returns:
             Validated PersonaPlan with personas and actionable tasks.
@@ -180,6 +184,7 @@ class PersonaGenerator:
             context=inspection_result.context,
             website_data=website_data,
             num_personas=effective_num,
+            persona_name=persona_name,
         )
 
         # 2. Generate structured payload via AI provider
@@ -233,36 +238,111 @@ def get_bundled_personas_dir() -> Path:
     return Path.cwd() / "personas"
 
 
-def rank_persona_files(files: List[Path], context: str) -> List[Path]:
-    """Rank persona files based on relevance to website context, audience, and features."""
-    ctx_lower = context.lower()
+PERSONA_KEYWORD_ALIASES: Dict[str, List[str]] = {
+    "e_commerce": ["shop", "store", "buy", "cart", "product", "checkout", "price", "retail", "item", "order", "flipkart", "amazon", "priya", "ecommerce", "e-commerce", "marketplace"],
+    "chloe_impatient": ["mobile", "responsive", "touch", "speed", "fast", "popup", "banner", "tap", "young", "chloe", "viewport", "handheld", "phone"],
+    "accessibility": ["accessib", "a11y", "wcag", "keyboard", "focus", "screen reader", "tab", "motor", "alex", "screenreader"],
+    "devon_tech": ["tech", "frontend", "code", "dev", "layout", "shift", "console", "error", "html", "api", "devon", "docs", "documentation", "github", "developer", "engineer"],
+    "marcus_skeptical": ["checkout", "payment", "card", "fishy", "trust", "ssl", "secure", "scam", "policy", "refund", "return", "marcus", "skeptical", "guarantee"],
+    "first_time": ["explore", "landing", "welcome", "first", "home", "about", "saas", "app", "visit", "visitor", "onboarding", "new_user"],
+    "elena_elderly": ["elderly", "senior", "contrast", "read", "font", "small", "text", "clear", "visible", "button", "confus", "elena", "low-vision", "low vision", "legib"],
+}
 
-    keyword_maps = {
-        "e_commerce": ["shop", "store", "buy", "cart", "product", "checkout", "price", "retail", "item", "order"],
-        "marcus_skeptical": ["checkout", "payment", "card", "fishy", "trust", "ssl", "secure", "scam", "policy", "refund", "return"],
-        "elena_elderly": ["elderly", "senior", "contrast", "read", "font", "small", "text", "clear", "visible", "button", "confus"],
-        "chloe_impatient": ["mobile", "responsive", "touch", "speed", "fast", "popup", "banner", "tap", "young"],
-        "accessibility": ["accessib", "a11y", "wcag", "keyboard", "focus", "screen reader", "tab", "motor"],
-        "devon_tech": ["tech", "frontend", "code", "dev", "layout", "shift", "console", "error", "html", "api"],
-        "first_time": ["explore", "landing", "welcome", "first", "home", "about", "saas", "app", "visit"],
-    }
+
+def find_specific_persona_file(persona_name: str, base_dir: Optional[Path] = None) -> Optional[Path]:
+    """Find a specific persona markdown file matching a requested name, keyword, or archetype."""
+    if not persona_name:
+        return None
+    p = Path(persona_name)
+    if p.is_file():
+        return p
+
+    personas_dir = base_dir or get_bundled_personas_dir()
+    if not personas_dir.is_dir():
+        return None
+
+    all_files = list(personas_dir.glob("*.md"))
+    query = persona_name.strip().lower()
+
+    # 1. Exact or partial stem match
+    for f in all_files:
+        stem = f.stem.lower()
+        if query == stem or query in stem or stem in query:
+            return f
+
+    # 2. Check alias maps
+    for key, words in PERSONA_KEYWORD_ALIASES.items():
+        if any(query == w or query in w or w in query for w in words):
+            for f in all_files:
+                if key in f.stem.lower() or f.stem.lower() in key:
+                    return f
+
+    # 3. Content search
+    for f in all_files:
+        try:
+            content = f.read_text(encoding="utf-8", errors="ignore").lower()
+            if query in content:
+                return f
+        except Exception:
+            pass
+
+    # 4. Default fallback to the sole elderly persona file if available
+    for f in all_files:
+        if "elena" in f.stem.lower() or "elderly" in f.stem.lower():
+            return f
+    return all_files[0] if all_files else None
+
+
+def rank_persona_files(
+    files: List[Path],
+    context: str = "",
+    url: str = "",
+    title: str = "",
+    interactive_elements_text: str = "",
+    specific_persona: Optional[str] = None,
+) -> List[Path]:
+    """Rank persona files based on relevance to website context, audience, and features.
+    
+    Chooses the single best persona for the project by default, or elevates a specific requested persona.
+    """
+    if not files:
+        return []
+
+    if specific_persona:
+        matched = find_specific_persona_file(specific_persona)
+        if matched and matched in files:
+            remaining = [f for f in files if f != matched]
+            return [matched] + remaining
+
+    ctx_lower = f"{context} {url} {title} {interactive_elements_text}".lower()
 
     def score(file_path: Path) -> int:
         pts = 0
         stem = file_path.stem.lower()
-        # Elena (Senior user with low vision & novice tech) is the primary baseline archetype
-        if "elena" in stem or "elderly" in stem:
-            pts += 50
+
+        # Check URL domain indications directly
+        url_lower = url.lower()
+        if any(d in url_lower for d in ("flipkart", "amazon", "ebay", "walmart", "shopify", "etsy", "store", "shop")):
+            if "e_commerce" in stem or "marcus" in stem:
+                pts += 60
+
         try:
             content = file_path.read_text(encoding="utf-8", errors="ignore").lower()
         except Exception:
             content = ""
 
-        for key, words in keyword_maps.items():
-            if any(w in ctx_lower for w in words):
-                if any(w in stem for w in words):
-                    pts += 15
-                pts += sum(content.count(w) for w in words[:3])
+        for key, words in PERSONA_KEYWORD_ALIASES.items():
+            key_matched = any(w in ctx_lower for w in words)
+            if key_matched:
+                if key in stem or any(w in stem for w in words):
+                    pts += 40
+                pts += sum(content.count(w) * 2 for w in words[:4])
+                pts += sum(ctx_lower.count(w) * 5 for w in words[:4])
+
+        # Elena is a solid baseline archetype for general accessibility/usability
+        if "elena" in stem or "elderly" in stem:
+            pts += 5
+
         return pts
 
     return sorted(files, key=score, reverse=True)
@@ -272,7 +352,10 @@ def load_personas_from_markdown(
     source: Union[str, Path],
     website_url: str = "",
     context: str = "",
-    max_personas: Optional[int] = None,
+    max_personas: Optional[int] = 1,
+    title: str = "",
+    interactive_elements_text: str = "",
+    specific_persona: Optional[str] = None,
 ) -> PersonaPlan:
     """Parse manual Markdown persona specifications into a PersonaPlan.
 
@@ -284,7 +367,14 @@ def load_personas_from_markdown(
     if p and p.exists():
         if p.is_dir():
             all_mds = list(p.glob("*.md"))
-            ranked = rank_persona_files(all_mds, context=context)
+            ranked = rank_persona_files(
+                all_mds,
+                context=context,
+                url=website_url,
+                title=title,
+                interactive_elements_text=interactive_elements_text,
+                specific_persona=specific_persona,
+            )
             if max_personas and max_personas > 0:
                 ranked = ranked[:max_personas]
             for f in ranked:
@@ -374,9 +464,9 @@ def load_personas_from_markdown(
                         )
                     )
 
-            # If user provided a specific target context (e.g. "Apple iPhone 16"), interpolate into tasks
+            # If user provided a specific search target in context, interpolate into tasks
             target_prod_match = re.search(r"\b(iphone\s*16(?:\s*pro(?:\s*max)?)?|apple\s*iphone|samsung\s*galaxy|gaming\s*laptop|laptop|sneakers?|shoes?)\b", context, re.IGNORECASE)
-            prod_name = target_prod_match.group(1).strip() if target_prod_match else ("Apple iPhone 16" if any(w in context.lower() for w in ("iphone", "apple")) else None)
+            prod_name = target_prod_match.group(1).strip() if target_prod_match else None
             if prod_name:
                 for t in tasks:
                     t.objective = re.sub(r"\(e\.g\.\s*[^)]+\)", f"({prod_name})", t.objective)
@@ -422,12 +512,21 @@ def load_personas_from_markdown(
 def generate_personas_and_tasks(
     inspection_result: BrowserInspectionResult,
     provider: BaseAIProvider,
-    num_personas: int = 3,
+    num_personas: int = 1,
     output_dir: Optional[Path] = None,
     personas_file: Optional[Union[str, Path]] = None,
+    persona_name: Optional[str] = None,
 ) -> PersonaPlan:
-    """Generate personas and tasks or load directly from pre-built markdown specifications."""
+    """Generate personas and tasks or load directly from pre-built markdown specifications.
+    
+    By default chooses the single best persona suited for the target website and project flow.
+    """
     target_file = personas_file
+    if not target_file and persona_name:
+        if num_personas > 1:
+            target_file = get_bundled_personas_dir()
+        else:
+            target_file = find_specific_persona_file(persona_name)
 
     if target_file:
         plan = load_personas_from_markdown(
@@ -435,10 +534,10 @@ def generate_personas_and_tasks(
             website_url=inspection_result.final_url,
             context=inspection_result.context,
             max_personas=num_personas,
+            title=getattr(inspection_result, "title", ""),
+            specific_persona=persona_name,
         )
-        save_directory = output_dir
-        if not save_directory and inspection_result.result_json_path:
-            save_directory = Path(inspection_result.result_json_path).parent
+        save_directory = output_dir or (Path(inspection_result.result_json_path).parent if inspection_result.result_json_path else None)
         if save_directory:
             save_directory = Path(save_directory)
             save_directory.mkdir(parents=True, exist_ok=True)
@@ -453,5 +552,6 @@ def generate_personas_and_tasks(
         inspection_result=inspection_result,
         num_personas=num_personas,
         output_dir=output_dir,
+        persona_name=persona_name,
     )
 

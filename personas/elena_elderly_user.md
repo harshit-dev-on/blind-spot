@@ -13,20 +13,20 @@
 - **Accessibility Needs:** High Contrast Text (min 4.5:1 ratio), Minimum 16px Font Sizes, Large Click Targets (min 44x44px), Clear Focus Outlines, and Uncluttered Layouts.
 
 #### Assigned Tasks:
-1. **Search and Locate Target Product with Clear Contrast**:
-   - **Objective:** Locate the primary product search input, search for the target item (e.g. Apple iPhone 16), and browse search results with legible high-contrast titles and prices.
+1. **Verify Text Readability and Typography Contrast**:
+   - **Objective:** Read main headlines, primary navigation, and core page sections to verify text is comfortably readable without squinting (minimum 16px font and WCAG AA 4.5:1 contrast).
+   - **Starting Conditions:** Starts on target page.
+   - **Observable Success Criteria:** Main headlines and navigation labels have sufficient contrast against background, font sizes are at least 16px, text is not faint or clipped.
+   - **Evidence to Collect:** Computed font sizes, text color vs background color, clipped or overflowing text containers.
+
+2. **Inspect Interactive Controls and Button Affordances**:
+   - **Objective:** Locate primary action buttons and call-to-actions, verify they have obvious button affordance, clear clickable boundaries, and distinct high contrast.
+   - **Starting Conditions:** Starts on target page.
+   - **Observable Success Criteria:** Primary buttons have distinct background color, clear borders, legible high-contrast label, and do not blend invisibly into background.
+   - **Evidence to Collect:** Button computed styles (background-color, padding, border), bounding box dimensions, visibility state.
+
+3. **Explore Navigation Journey and Back Controls**:
+   - **Objective:** Explore primary navigation links or categories, proceed through core website sections, and verify obvious back controls without confusing popups or dead ends.
    - **Starting Conditions:** Starts on homepage.
-   - **Observable Success Criteria:** Search query submitted, product search results displayed with clear readable text and price contrast.
-   - **Evidence to Collect:** Search input value, search results heading, item price contrast.
-
-2. **Inspect Product Details and High-Contrast Add-to-Cart Action**:
-   - **Objective:** Open the top product result in active tab, inspect readable specifications and price contrast, and click the prominent high-contrast Add to Cart or Buy Now button.
-   - **Starting Conditions:** Starts on search results page.
-   - **Observable Success Criteria:** Product details page opened in active tab, product specifications reviewed, Add to Cart or Buy Now clicked with clear visual affordance.
-   - **Evidence to Collect:** Product details heading, button computed styles, cart action confirmation.
-
-3. **Navigate Shopping Cart and Proceed to Checkout Without Confusion**:
-   - **Objective:** Navigate to the shopping cart, verify item details, quantity, and delivery fee with legible typography, and proceed to checkout without dead ends.
-   - **Starting Conditions:** Starts on product details page or cart drawer.
-   - **Observable Success Criteria:** Cart page opened and verified, cart total reviewed, proceed to checkout or authentication flow reached.
-   - **Evidence to Collect:** Cart total price, checkout URL, authentication barrier.
+   - **Observable Success Criteria:** Navigation progresses cleanly with legible headings and obvious breadcrumbs or back links, no jarring popups block the screen.
+   - **Evidence to Collect:** Back link or logo availability, page title clarity, presence of intrusive blocking overlays.

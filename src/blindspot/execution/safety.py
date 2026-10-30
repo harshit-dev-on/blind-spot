@@ -121,9 +121,22 @@ def validate_navigation_url(
     return True, None
 
 
-def is_action_destructive(target: Optional[str], value: Optional[str]) -> Tuple[bool, Optional[str]]:
+def is_action_destructive(target: Optional[str], value: Optional[str], allow_local: bool = False) -> Tuple[bool, Optional[str]]:
     """Inspect element identifier and value to prevent accidental real purchases or deletions."""
     combined_text = f"{target or ''} {value or ''}"
+    combined_lower = combined_text.lower()
+
+    # Demo, test, mock, and sandbox orders/payments on local or test apps are safe for auditing
+    if any(k in combined_lower for k in ("demo", "test", "mock", "sandbox", "dummy")):
+        # Only verify it is not an account wipe/deletion
+        if any(k in combined_lower for k in ("delete", "terminate", "wipe", "cancel subscription")):
+            return True, "Blocked destructive account wipe or termination action."
+        return False, None
+
+    if allow_local:
+        if any(k in combined_lower for k in ("delete", "terminate", "wipe", "cancel subscription")):
+            return True, "Blocked destructive account wipe or termination action."
+        return False, None
 
     for pattern in DESTRUCTIVE_TEXT_PATTERNS:
         match = pattern.search(combined_text)

@@ -148,9 +148,9 @@ def test_render_full_run_interaction_markdown(tmp_path: Path):
 
     full_md = render_full_run_interaction_markdown(plan, run_exec, output_dir=tmp_path)
 
-    assert "BlindSpot Browser Interaction Log" in full_md
+    assert "# Live Browser Interaction" in full_md
     assert "https://example.com" in full_md
     assert "Chloe Davis" in full_md
-    assert "Screenshot-Driven Visual Analysis" in full_md
+    assert "- **Status:** COMPLETED" in full_md
     # Ensure DOM code dumps are disabled
     assert "```html" not in full_md

@@ -29,7 +29,8 @@ def _resolve_run_dir(run_id: str) -> Path:
 def tool_inspect_website(
     url: str,
     context: str,
-    personas: int = 3,
+    personas: int = 1,
+    persona: Optional[str] = None,
     headed: bool = True,
     wait_for_completion: bool = False,
     timeout_seconds: int = 180,
@@ -42,7 +43,8 @@ def tool_inspect_website(
     Args:
         url: Target website URL to inspect and test (e.g. 'https://example.com').
         context: Contextual description of the website purpose, capabilities, and target audience.
-        personas: Number of synthetic personas to generate and test (1 to 5, default 3).
+        personas: Number of synthetic personas to generate and test (1 to 5, default 1).
+        persona: Optional specific persona name or archetype (e.g. 'ecommerce', 'mobile', 'accessibility').
         headed: Whether to display a visible browser window on the host desktop.
         wait_for_completion: If True, blocks until the run finishes or timeout is reached.
         timeout_seconds: Maximum seconds to wait when wait_for_completion is True.
@@ -102,6 +104,7 @@ def tool_inspect_website(
         url=url.strip(),
         context=effective_ctx,
         personas=clamped_personas,
+        persona=persona,
         headed=headed,
         browser="chromium",
         output_dir=output_dir,
@@ -156,12 +159,17 @@ def tool_get_test_status(run_id: str) -> Dict[str, Any]:
     # In-memory active run
     rec = job_manager.get_run(run_id)
     if rec:
-        has_report = (rec.output_dir / "problems_found.md").exists() or (rec.output_dir / "report.json").exists()
-        rep_path = (
-            str(rec.output_dir / "problems_found.md")
-            if (rec.output_dir / "problems_found.md").exists()
-            else (str(rec.output_dir / "report.json") if has_report else None)
+        report_file = (
+            (rec.output_dir / "improvements_suggestions.md")
+            if (rec.output_dir / "improvements_suggestions.md").exists()
+            else (
+                (rec.output_dir / "problems_found.md")
+                if (rec.output_dir / "problems_found.md").exists()
+                else (rec.output_dir / "report.json")
+            )
         )
+        has_report = report_file.exists()
+        rep_path = str(report_file) if has_report else None
         return {
             "run_id": rec.run_id,
             "status": rec.status,
@@ -182,11 +190,16 @@ def tool_get_test_status(run_id: str) -> Dict[str, Any]:
         try:
             data = load_report_data_from_dir(run_dir)
             if data:
-                rep_path = (
-                    str(run_dir / "problems_found.md")
-                    if (run_dir / "problems_found.md").exists()
-                    else str(run_dir / "report.json")
+                report_file = (
+                    (run_dir / "improvements_suggestions.md")
+                    if (run_dir / "improvements_suggestions.md").exists()
+                    else (
+                        (run_dir / "problems_found.md")
+                        if (run_dir / "problems_found.md").exists()
+                        else (run_dir / "report.json")
+                    )
                 )
+                rep_path = str(report_file) if report_file.exists() else None
                 return {
                     "run_id": run_id,
                     "status": "completed",
@@ -276,7 +289,7 @@ def tool_get_test_results(run_id: str) -> Dict[str, Any]:
         improvements_count = sum(1 for f in findings if f.get("category") == "POTENTIAL_IMPROVEMENT")
 
         interaction_path = run_dir / "browser_interaction.md"
-        problems_path = run_dir / "problems_found.md"
+        problems_path = (run_dir / "improvements_suggestions.md") if (run_dir / "improvements_suggestions.md").exists() else (run_dir / "problems_found.md")
 
         # Summarized top findings (title, severity, category, suggested improvement)
         top_findings_summary = [

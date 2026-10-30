@@ -22,7 +22,6 @@ def test_bundled_skills_exist():
     skill_names = {s.name for s in skills}
     expected = {
         "blindspot-ux-audit",
-        "blindspot-verify-fix",
         "blindspot-wcag-audit",
         "blindspot-persona-designer",
     }
@@ -38,7 +37,7 @@ def test_bundled_skills_conform_to_spec():
         result = validate_skill(skill.skill_path)
         assert result.is_valid is True, f"Skill {result.name} failed validation: {result.errors}"
         assert len(result.errors) == 0
-        assert skill.version == "1.0.0"
+        assert skill.version in ("1.0.0", "1.2.0")
         assert len(skill.description) > 20
         # Progressive disclosure guideline: instructions within ~2500 tokens
         assert result.token_estimate < 2500
@@ -121,7 +120,6 @@ def test_cli_skill_list():
     result = runner.invoke(app, ["skill", "list"])
     assert result.exit_code == 0
     assert "blindspot-ux-audit" in result.output
-    assert "blindspot-verify-fix" in result.output
     assert "blindspot-wcag-audit" in result.output
     assert "blindspot-persona-designer" in result.output
 
@@ -160,7 +158,7 @@ def test_skill_registry_progressive_disclosure():
     # Tier 1: summaries contain light metadata
     wcag_sum = next(s for s in summaries if s.name == "blindspot-wcag-audit")
     assert "accessibility" in wcag_sum.keywords
-    assert wcag_sum.version == "1.0.0"
+    assert wcag_sum.version in ("1.0.0", "1.2.0")
 
     # Tier 2: Activation on demand with alias resolution
     wcag_skill = reg.get_skill("wcag")

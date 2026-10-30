@@ -180,7 +180,7 @@ class RunSession:
         """Persist session state to a JSON file."""
         target_path = filepath
         if target_path is None:
-            base_dir = self.output_dir or Path(f"reports/{self.run_id}")
+            base_dir = self.output_dir or Path(f"blindspot_reports/{self.run_id}")
             base_dir.mkdir(parents=True, exist_ok=True)
             target_path = base_dir / "run_state.json"
 
