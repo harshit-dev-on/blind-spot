@@ -65,6 +65,15 @@ All legacy test suites, verification pipelines, code recommendations, and test a
 2. `improvements_suggestions.md` (evidence-based UX improvement suggestions based strictly on browser observations)
 3. `screenshots/` (all step screenshots)
 
+## 9. Codebase Stability & Working Core Invariant Freeze
+- **Strictly Preserve Working Implementations**: Under NO circumstances should working, validated cores be refactored or modified when introducing new features.
+  1. **Desktop Session Forwarding** (`src/blindspot/runtime/desktop_utils.py`): Automatic forwarding to `WinSta0\Default` on Windows sandbox environments.
+  2. **Browser Foreground Management** (`src/blindspot/runtime/window_utils.py`): Process-level `chrome.exe` verification, Alt-key focus lock bypass, and `HWND_TOPMOST` pinning.
+  3. **Interactive Live Browser Loop** (`src/blindspot/mcp/live_browser.py`): Visible Chromium window, DOM `@eN` stamps, and perception-action iteration with `action_needed.json` / `next_action.json`.
+  4. **Form Completion & Journey Persistence** (`src/blindspot/ai/providers/antigravity.py`): Elena persona end-to-end form completion (delivery details, payment choice, order confirmation).
+  5. **3-Artifact Contract**: Maintaining exactly `browser_interaction.md`, `improvements_suggestions.md`, and `screenshots/`.
+- **Additive Architecture Only**: Any future feature requests must be strictly additive (new options, supplementary skills, or external adapters) without changing or regressing the core live browser actuator.
+
 ### Required Template: `improvements_suggestions.md`
 ```markdown
 # UX Improvement Suggestions: [Target Website / Name]
