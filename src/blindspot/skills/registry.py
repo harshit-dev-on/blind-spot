@@ -52,6 +52,8 @@ class SkillRegistry:
         "tracker": "blindspot-task-tracker",
         "task-tracker": "blindspot-task-tracker",
         "step-gate": "blindspot-task-tracker",
+        "context": "blindspot-website-context",
+        "website-context": "blindspot-website-context",
     }
 
     def __init__(self, search_paths: Optional[List[Path]] = None) -> None:

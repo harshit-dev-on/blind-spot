@@ -1,0 +1,6 @@
+{
+  "action": "click",
+  "target": "@e17",
+  "target_strategy": "ref",
+  "rationale": "Click the first story's comments link ('651 comments') to evaluate discussion page layout, font sizing, and nested comment accessibility."
+}

@@ -45,7 +45,7 @@ def cleanup_report_directory(out_dir: Path) -> None:
         except Exception:
             pass
 
-    allowed_items = {"browser_interaction.md", "problems_found.md", "task_tracker.md"}
+    allowed_items = {"browser_interaction.md", "problems_found.md", "task_tracker.md", "website_context.md", "screenshot.png"}
     if shots_dir.is_dir() and any(shots_dir.iterdir()):
         allowed_items.add("screenshots")
 

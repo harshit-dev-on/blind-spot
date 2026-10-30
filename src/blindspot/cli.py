@@ -238,7 +238,7 @@ def main(
         bool,
         typer.Option(
             "--skip-ai",
-            help="Skip AI persona generation (browser inspection only).",
+            help="Skip persona synthesis; capture browser evidence without initializing an AI provider.",
             show_default=False,
         ),
     ] = False,
@@ -892,7 +892,7 @@ def inspect(
         bool,
         typer.Option(
             "--skip-execution",
-            help="Skip browser task execution (only inspect and synthesize plan).",
+            help="Skip simulated user actions; only inspect the initial website state.",
             show_default=False,
         ),
     ] = False,
@@ -1480,6 +1480,80 @@ def mcp_cmd(
 
 
 @app.command(
+    name="live",
+    help="Launch an agentic live browser session that writes screenshots to Markdown and waits for Antigravity's instructions.",
+)
+def live_cmd(
+    target: Annotated[
+        str,
+        typer.Argument(
+            help="Target website URL to inspect (e.g. https://www.flipkart.com).",
+        ),
+    ],
+    goal: Annotated[
+        str,
+        typer.Option(
+            "--goal",
+            "-g",
+            "--context",
+            "-c",
+            help="Audit goal or specific user task to achieve.",
+            show_default=True,
+        ),
+    ] = "Audit website usability and user journey",
+    output_dir: Annotated[
+        Optional[str],
+        typer.Option(
+            "--output-dir",
+            "-o",
+            help="Custom directory to store screenshots and markdown logs.",
+            show_default=False,
+        ),
+    ] = None,
+    allow_local: Annotated[
+        bool,
+        typer.Option(
+            "--allow-local",
+            help="Allow inspection of loopback local development servers (e.g. http://localhost:3000).",
+        ),
+    ] = False,
+    timeout: Annotated[
+        int,
+        typer.Option(
+            "--timeout",
+            help="Timeout in seconds while waiting for agent actions.",
+        ),
+    ] = 1800,
+) -> None:
+    """Run interactive live browser loop controlled by Antigravity via Markdown & next_action.json."""
+    from blindspot.mcp.live_browser import run_live_bridge
+
+    run_dir = run_live_bridge(
+        url=target,
+        goal=goal,
+        output_dir=Path(output_dir) if output_dir else None,
+        allow_local=allow_local,
+        timeout_seconds=timeout,
+    )
+    console.print(f"\n[bold green]Live audit completed![/bold green] Report saved to: [cyan]{run_dir}[/cyan]")
+
+
+@app.command(
+    name="step",
+    help="Alias for 'live' command to drive step-by-step browser audits.",
+)
+def step_cmd(
+    target: Annotated[str, typer.Argument(help="Target website URL.")],
+    goal: Annotated[str, typer.Option("--goal", "-g", "--context", "-c", help="Audit goal.")] = "Audit website usability",
+    output_dir: Annotated[Optional[str], typer.Option("--output-dir", "-o", help="Custom output directory.")] = None,
+    allow_local: Annotated[bool, typer.Option("--allow-local", help="Allow loopback.")] = False,
+    timeout: Annotated[int, typer.Option("--timeout", help="Timeout in seconds.")] = 1800,
+) -> None:
+    """Alias for live_cmd."""
+    live_cmd(target=target, goal=goal, output_dir=output_dir, allow_local=allow_local, timeout=timeout)
+
+
+@app.command(
     name="scroll",
     help="Perform a zero-AI live browser scrolling test in front of you.",
 )
@@ -1702,6 +1776,9 @@ def main_entry() -> None:
             "skill",
             "setup",
             "uninstall",
+            "live",
+            "step",
+            "scroll",
             "--help",
             "-h",
             "--version",

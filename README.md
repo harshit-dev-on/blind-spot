@@ -124,6 +124,18 @@ curl -fsSL https://raw.githubusercontent.com/harshit-dev-on/blind-spot/master/sc
 
 The setup wizard defaults to Antigravity local mode, which needs no cloud API key. To change providers later, run `blindspot1 setup`. The wizard saves your configuration under `~/.blindspot/` and can configure a local Ollama model or a hosted provider.
 
+### Let your coding agent drive a live audit without a separate API key
+
+Connect BlindSpot's MCP server to your coding agent (see [MCP setup](#channel-2-model-context-protocol-mcp-server)). The agent opens a visible Chromium session, receives a screenshot and page evidence, decides the next step using its own model, then sends one browser action. Each action returns a new screenshot for the next decision. No separate BlindSpot API key or model provider is needed; the coding agent uses its existing model access.
+
+The final artifacts follow the same format each run: `website_context.md`, `browser_interaction.md` with the agent's rationale and screenshots after each action, `problems_found.md`, and a `screenshots/` folder. Install the bundled skill to teach compatible agents this loop:
+
+```sh
+blindspot1 skill install
+```
+
+Then ask the coding agent to audit a site, for example: “Audit Flipkart's product search.” For local development targets, the agent must use `allow_local: true` when opening the session.
+
 > [!NOTE]
 > On Linux, Chromium may require system browser libraries. The installer asks Playwright to provision these automatically. New shell windows may be needed before the `blindspot1` command appears on PATH.
 
@@ -244,7 +256,7 @@ BlindSpot1 is agent-native. Coding agents like **Antigravity**, **Claude Code**,
 | Integration Channel | Setup Command / Location | How the Agent Discovers It |
 | :--- | :--- | :--- |
 | **1. Agent Skills** *(Recommended)* | `blindspot1 skill install` | Agent auto-indexes `.agents/skills/**/SKILL.md` and activates autonomously on prompts like *"audit my website"* |
-| **2. Model Context Protocol (MCP)** | `mcp_config.json` / `.cursor/mcp.json` | Exposes 7 structured tools (`inspect_website`, `get_findings`, `verify_fixes`) directly into the agent's function-calling palette |
+| **2. Model Context Protocol (MCP)** | `mcp_config.json` / `.cursor/mcp.json` | Exposes the live browser loop (`live_browser_open`, `live_browser_action`, `live_browser_observe`, `live_browser_finish`) plus audit tools directly to the coding agent |
 | **3. Workspace Directives** | [`AGENTS.md`](AGENTS.md) in repo root | Agent automatically reads project guidelines and follows instructions for testing and running audits |
 
 ---
@@ -262,7 +274,7 @@ blindspot1 skill install
 blindspot1 skill list
 ```
 
-This installs 7 self-documenting skill bundles into `.agents/skills/`:
+This installs 8 self-documenting skill bundles into `.agents/skills/`:
 - `blindspot-task-tracker/SKILL.md`: Strict step-gate task tracking, sequential milestone progression, and human-in-the-loop auth prompter.
 - `blindspot-ux-audit/SKILL.md`: Conducts end-to-end UX, accessibility, and user-journey audits.
 - `blindspot-ecommerce-audit/SKILL.md`: Audits shopping carts, pricing transparency, and checkout funnels.
@@ -270,6 +282,7 @@ This installs 7 self-documenting skill bundles into `.agents/skills/`:
 - `blindspot-mobile-audit/SKILL.md`: Audits responsive layouts, viewport overflow, and touch target dimensions.
 - `blindspot-verify-fix/SKILL.md`: Verifies developer code patches to prevent UX regressions.
 - `blindspot-persona-designer/SKILL.md`: Tailors realistic synthetic persona journeys.
+- `blindspot-website-context/SKILL.md`: Guides the coding agent through a visible, screenshot-driven browser loop using its own reasoning, then saves a Markdown audit.
 
 **How Antigravity & Coding Agents Discover It:**  
 Antigravity automatically indexes any `SKILL.md` files in `.agents/skills/`. The moment you type in chat:
@@ -343,6 +356,10 @@ If `blindspot1` is not installed globally on your machine, you can run the MCP s
 ```
 
 #### Available MCP Tools Exposed to Coding Agents:
+- `live_browser_open`: Open visible Chromium and return the initial screenshot/page evidence to the coding agent.
+- `live_browser_action`: Execute one agent-chosen browser action and return a fresh screenshot/evidence.
+- `live_browser_observe`: Capture the current page again without acting.
+- `live_browser_finish` / `live_browser_close`: Save the agent's audit and close, or close while preserving existing evidence.
 - `inspect_website`: Initiate an autonomous UX and accessibility audit run.
 - `get_test_status`: Poll execution progress, active stage, and running persona tasks.
 - `get_test_results`: Retrieve pass/fail metrics, defect summaries, and report paths.
