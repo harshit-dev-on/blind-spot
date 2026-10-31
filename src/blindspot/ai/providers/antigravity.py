@@ -74,7 +74,7 @@ class AntigravityProvider(BaseAIProvider):
             message=(
                 "Antigravity bridge requests are enabled; local DOM heuristics require no cloud credentials."
                 if bridge_active else
-                "Local DOM heuristic mode is ready; no cloud credentials are required."
+                "Antigravity local DOM heuristic mode is ready; no cloud credentials are required."
             ),
         )
 

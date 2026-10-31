@@ -16,7 +16,19 @@ def bring_browser_window_to_foreground(hint: Optional[str] = None, stay_topmost:
         stay_topmost: If True, keeps the browser pinned to HWND_TOPMOST so it stays visible
                       in front of desktop apps while the persona operates.
     """
-    if sys.platform != "win32":
+    if sys.platform == "darwin":
+        try:
+            import subprocess
+            subprocess.run(
+                ["osascript", "-e", 'tell application "Chromium" to activate'],
+                capture_output=True,
+                check=False,
+                timeout=1,
+            )
+        except Exception:
+            pass
+        return None
+    elif sys.platform != "win32":
         return None
 
     try:
