@@ -1,0 +1,6 @@
+{
+  "action": "scroll",
+  "target": "document",
+  "value": "down",
+  "rationale": "As someone with low vision, I need to see all the products available on this page. I will scroll down to examine the entire selection, as the current view only shows a small portion of the items."
+}

@@ -1,0 +1,6 @@
+{
+  "action": "scroll",
+  "target": "document",
+  "value": "down",
+  "rationale": "The page displays many products, but I need to see more to browse. I will scroll down to check for more options and see the full extent of the product listing, ensuring I don't miss anything."
+}

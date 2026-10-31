@@ -1,0 +1,6 @@
+{
+  "action": "press",
+  "target": "body",
+  "value": "Escape",
+  "rationale": "A large login modal is currently obscuring most of the website content. Since I am new to technology and this modal is preventing me from starting my shopping journey, I need to close it immediately to see the main page and begin my search, as per the instructions."
+}

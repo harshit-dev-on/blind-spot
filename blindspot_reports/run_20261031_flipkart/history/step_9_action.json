@@ -1,0 +1,6 @@
+{
+  "action": "wait",
+  "target": "3000",
+  "value": "3000",
+  "rationale": "The cart page is actively loading with a solitary miniature blue dot spinner in the center. I will wait 3 seconds for the cart components to render."
+}

@@ -1,0 +1,6 @@
+{
+  "action": "press",
+  "target": "body",
+  "value": "Escape",
+  "rationale": "I see a large pop-up dialog box titled 'Login' which is obstructing the main content of the website. Since I am not ready to log in, I need to close this modal first to be able to navigate or search for what I need, as per the instructions."
+}

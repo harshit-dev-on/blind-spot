@@ -1,0 +1,6 @@
+{
+  "action": "fill",
+  "target": "@e10",
+  "value": "Elena Rostova",
+  "rationale": "Elena notices the name field had only placeholder text rather than actual input, so she explicitly types her full name."
+}

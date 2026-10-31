@@ -283,3 +283,191 @@ def test_run_live_bridge_executes_actions_and_finishes(tmp_path):
     assert "Completed testing" in findings_text
     assert "Verified button click" in findings_text
 
+
+def test_run_live_bridge_autonomous_execution(tmp_path):
+    """Verify run_live_bridge drives autonomous execution with local Ollama provider."""
+    from blindspot.mcp.live_browser import run_live_bridge
+    from blindspot.ai.models import AIResponse, ProviderStatus
+
+    output_dir = tmp_path / "live_autonomous_run"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    mock_status = ProviderStatus(
+        provider="ollama",
+        model="gemma4:e4b",
+        base_url="http://localhost:11434",
+        is_reachable=True,
+        model_available=True,
+    )
+
+    action_response = AIResponse(
+        content='{"action": "click", "target": "@e1", "value": "", "rationale": "Elena clicks link to test affordance", "is_done": false}',
+        model="gemma4:e4b",
+        provider="ollama",
+    )
+
+    finish_report_response = AIResponse(
+        content=(
+            "# UX Improvement Suggestions: https://example.com\n\n"
+            "- **Target URL:** https://example.com\n"
+            "- **Audit Goal:** Usability\n"
+            "- **Date:** 2026-10-31\n\n"
+            "## 1. Executive Summary\nElena found issues.\n\n"
+            "## 2. Interactive Journey Summary\n- **Total Steps Taken:** 1\n- **Key Milestones Explored:** None\n\n"
+            "## 3. Improvement Suggestions\n"
+            "### Suggestion 1: Contrast <Low contrast>\n"
+            "- **Observed Behavior:** Low contrast\n"
+            "- **UX Friction / Impact:** Hard to read\n"
+            "- **Suggested Improvement:** Increase contrast\n"
+            "- **Evidence:** screenshots/step-000.png\n"
+        ),
+        model="gemma4:e4b",
+        provider="ollama",
+    )
+
+    with patch("playwright.sync_api.sync_playwright") as mock_pw, \
+         patch("blindspot.ai.providers.ollama.OllamaProvider") as mock_prov_cls:
+
+        mock_provider = mock_prov_cls.return_value
+        mock_provider.model = "gemma4:e4b"
+        mock_provider.check_health.return_value = mock_status
+        mock_provider.start_session.return_value = True
+        mock_provider.stop_session.return_value = True
+        mock_provider.generate.side_effect = [action_response, finish_report_response]
+
+        mock_browser = MagicMock()
+        mock_ctx = MagicMock()
+        mock_page = MagicMock()
+        mock_page.url = "https://example.com"
+        mock_page.title.return_value = "Example Test"
+        mock_page.locator.return_value.inner_text.return_value = "Example page text"
+        mock_page.locator.return_value.evaluate_all.return_value = [
+            {"ref": "@e1", "tag": "a", "role": "link", "text": "Link", "aria": "", "name": "", "id": "", "placeholder": "", "type": "", "href": ""}
+        ]
+
+        mock_pw.return_value.__enter__.return_value.chromium.launch.return_value = mock_browser
+        mock_browser.new_context.return_value = mock_ctx
+        mock_ctx.new_page.return_value = mock_page
+        mock_ctx.pages = [mock_page]
+
+        res_dir = run_live_bridge(
+            url="https://example.com",
+            goal="Autonomous test",
+            output_dir=output_dir,
+            autonomous=True,
+            max_steps=1,
+            timeout_seconds=5,
+        )
+
+    assert res_dir == output_dir
+    assert (output_dir / "browser_interaction.md").is_file()
+    assert (output_dir / "improvements_suggestions.md").is_file()
+    assert (output_dir / "action_needed.json").is_file()
+
+    mock_provider.start_session.assert_called_once()
+    mock_provider.stop_session.assert_called_once()
+
+    status_data = json.loads((output_dir / "action_needed.json").read_text(encoding="utf-8"))
+    assert status_data["status"] == "completed"
+
+    report_text = (output_dir / "improvements_suggestions.md").read_text(encoding="utf-8")
+    assert "# UX Improvement Suggestions" in report_text
+    assert "Suggestion 1: Contrast" in report_text
+
+
+def test_decide_autonomous_action_flexible_visual_analysis(tmp_path):
+    """Verify _decide_autonomous_action performs dynamic visual and UX analysis for any website."""
+    from blindspot.ai.models import AIResponse
+    from blindspot.mcp.live_browser import _decide_autonomous_action
+
+    mock_provider = MagicMock()
+    mock_provider.generate.return_value = AIResponse(
+        content=json.dumps({
+            "visual_observation": "The header contains a dark blue banner with a high-contrast logo.",
+            "ux_friction": "The search input placeholder has low contrast gray text on white.",
+            "action": "click",
+            "target": "@e2",
+            "value": "",
+            "rationale": "Elena clicks the Documentation link to view user guides.",
+            "is_done": False,
+        }),
+        model="gemma4:e4b",
+        provider="ollama",
+    )
+
+    controls = [
+        {"ref": "@e1", "tag": "input", "role": "searchbox", "text": "", "placeholder": "Search docs...", "aria": "Search"},
+        {"ref": "@e2", "tag": "a", "role": "link", "text": "Documentation", "href": "/docs"},
+        {"ref": "@e3", "tag": "button", "role": "button", "text": "Get Started"},
+    ]
+
+    shot_path = tmp_path / "shot.png"
+    shot_path.write_bytes(b"\x89PNG\r\n\x1a\n")
+
+    result = _decide_autonomous_action(
+        provider=mock_provider,
+        url="http://localhost:8088",
+        title="Developer Dashboard",
+        goal="Audit website usability",
+        step=1,
+        controls=controls,
+        screenshot_path=shot_path,
+        history_summary="## Step 0: Initial page observation\nLoaded page successfully.",
+        page_text="Welcome to the developer dashboard. Access documentation and metrics below.",
+    )
+
+    assert result["action"] == "click"
+    assert result["target"] == "@e2"
+    # Rationale must incorporate visual observation and friction
+    assert "dark blue banner" in result["rationale"]
+    assert "low contrast" in result["rationale"]
+
+    # Verify prompt received real page text and history
+    sent_prompt = mock_provider.generate.call_args.kwargs["prompt"]
+    assert "Developer Dashboard" in sent_prompt
+    assert "developer dashboard" in sent_prompt
+    assert "Step 0: Initial page observation" in sent_prompt
+    assert "### Inputs & Form Fields:" in sent_prompt
+    assert "### Navigation & Content Links:" in sent_prompt
+
+
+def test_decide_autonomous_action_anti_looping_dynamic_control():
+    """Verify anti-looping guard dynamically picks the active button on screen without hardcoding."""
+    from blindspot.ai.models import AIResponse
+    from blindspot.mcp.live_browser import _decide_autonomous_action
+
+    mock_provider = MagicMock()
+    # Model mistakenly returns scroll after already scrolling
+    mock_provider.generate.return_value = AIResponse(
+        content=json.dumps({
+            "action": "scroll",
+            "target": "",
+            "value": "down",
+            "rationale": "Scrolling again",
+        }),
+        model="gemma4:e4b",
+        provider="ollama",
+    )
+
+    controls = [
+        {"ref": "@e5", "tag": "button", "role": "button", "text": "Confirm Selection"},
+    ]
+
+    result = _decide_autonomous_action(
+        provider=mock_provider,
+        url="https://example.com/form",
+        title="Form Test",
+        goal="Submit form",
+        step=2,
+        controls=controls,
+        screenshot_path=Path("/nonexistent.png"),
+        history_summary="",
+        recent_actions=["scroll"],
+    )
+
+    # Must override scroll and click the active button dynamically
+    assert result["action"] == "click"
+    assert result["target"] == "@e5"
+    assert "Confirm Selection" in result["rationale"]
+
+

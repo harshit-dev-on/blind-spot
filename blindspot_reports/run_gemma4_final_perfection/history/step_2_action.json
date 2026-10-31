@@ -1,0 +1,6 @@
+{
+  "action": "press",
+  "target": "body",
+  "value": "Escape",
+  "rationale": "A large login modal is obstructing the view of the shopping website. As a novice user, I find these pop-ups confusing, so I will press 'Escape' to close it and see the main page content, as per the instructions."
+}

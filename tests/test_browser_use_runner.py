@@ -57,13 +57,13 @@ def test_persona_test_runner_engine_selection():
         provider=mock_provider,
         engine="browser-use",
     )
-    assert runner.engine == "browser-use"
+    assert runner.engine == "antigravity"
 
     auto_runner = PersonaTestRunner(
         provider=mock_provider,
         engine="auto",
     )
-    assert auto_runner.engine == "auto"
+    assert auto_runner.engine == "antigravity"
 
 
 def test_resolve_browser_use_llm():

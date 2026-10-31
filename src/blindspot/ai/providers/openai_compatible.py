@@ -5,7 +5,7 @@ import time
 from typing import Any, Dict, List, Optional
 import httpx
 
-from blindspot.ai.base import BaseAIProvider, mask_api_key
+from blindspot.ai.base import BaseAIProvider, mask_api_key, strip_thinking_tags
 from blindspot.ai.exceptions import (
     AIAuthenticationError,
     AIConnectionError,
@@ -166,6 +166,7 @@ class OpenAICompatibleProvider(BaseAIProvider):
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
         format_json: bool = False,
+        image_b64: Optional[str] = None,
     ) -> AIResponse:
         """Send chat completion request to an OpenAI-compatible endpoint."""
         chat_url = self._build_url("chat/completions")
@@ -174,7 +175,21 @@ class OpenAICompatibleProvider(BaseAIProvider):
         messages = []
         if system_prompt and system_prompt.strip():
             messages.append({"role": "system", "content": system_prompt.strip()})
-        messages.append({"role": "user", "content": prompt.strip()})
+
+        if image_b64 and image_b64.strip():
+            clean_b64 = image_b64.strip()
+            if clean_b64.startswith("data:"):
+                image_url = clean_b64
+            else:
+                image_url = f"data:image/png;base64,{clean_b64}"
+            user_content = [
+                {"type": "text", "text": prompt.strip()},
+                {"type": "image_url", "image_url": {"url": image_url}},
+            ]
+        else:
+            user_content = prompt.strip()
+
+        messages.append({"role": "user", "content": user_content})
 
         payload: Dict[str, Any] = {
             "model": self.model,
@@ -219,7 +234,8 @@ class OpenAICompatibleProvider(BaseAIProvider):
                         provider=self.name,
                     )
 
-                content = choices[0].get("message", {}).get("content", "")
+                raw_content = choices[0].get("message", {}).get("content", "")
+                content = strip_thinking_tags(raw_content)
                 usage = data.get("usage")
 
                 return AIResponse(

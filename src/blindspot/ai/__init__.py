@@ -16,7 +16,7 @@ from blindspot.ai.providers.ollama import OllamaProvider
 from blindspot.ai.providers.openai_compatible import OpenAICompatibleProvider
 
 CURATED_MODELS = {
-    "ollama": ["gemma4", "llama3.2", "mistral", "phi3", "qwen2.5"],
+    "ollama": ["gemma4", "gemma4:12b", "gemma4:e4b", "llama3.2", "mistral", "phi3", "qwen2.5"],
     "gemini": ["gemini-2.5-flash"],
     "openai": ["gpt-4o-mini", "gpt-4o"],
     "anthropic": ["claude-3-5-sonnet-20241022"],
@@ -37,7 +37,7 @@ DEFAULT_KEY_ENVS = {
     "openai_compatible": "OPENAI_API_KEY",
 }
 DEFAULT_PROVIDER_MODELS = {
-    "ollama": "gemma4",
+    "ollama": "gemma4:e4b",
     "gemini": "gemini-2.5-flash",
     "openai": "gpt-4o-mini",
     "anthropic": "claude-3-5-sonnet-20241022",

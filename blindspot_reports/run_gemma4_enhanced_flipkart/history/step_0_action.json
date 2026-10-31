@@ -1,0 +1,6 @@
+{
+  "action": "press",
+  "target": "body",
+  "value": "Escape",
+  "rationale": "A large modal dialog titled 'Login' is obstructing the view of the main shopping page. Since I am not logged in, I need to dismiss this popup to continue browsing or searching for items, as per my strict journey persistence rule."
+}

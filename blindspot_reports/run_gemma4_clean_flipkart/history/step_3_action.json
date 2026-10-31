@@ -1,0 +1,6 @@
+{
+  "action": "click",
+  "target": "@e19",
+  "value": "1.00",
+  "rationale": "I am looking at reading glasses, and the product details page shows several reading power options. Since the product title suggests (+1.00), and this is the default/selected option, I will click '1.00' to ensure this specific power is selected before proceeding to buy. The button is large and clearly labeled, which is good for my vision."
+}

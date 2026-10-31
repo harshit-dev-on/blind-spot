@@ -1,0 +1,6 @@
+{
+  "action": "click",
+  "target": "@e12",
+  "value": "",
+  "rationale": "Elena reviews her order summary (\u20b970 total) and clicks the prominent green 'Proceed to checkout \u2192' button to test the checkout experience."
+}

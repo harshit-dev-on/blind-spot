@@ -1,0 +1,6 @@
+{
+  "action": "scroll",
+  "target": "window",
+  "value": "down",
+  "rationale": "The buy action may require selecting a size or delivery location. As Elena, I need to see full product details, pin code delivery check, and reviews below the fold. I will scroll down to explore these details."
+}

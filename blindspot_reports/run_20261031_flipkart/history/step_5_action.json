@@ -1,0 +1,6 @@
+{
+  "action": "click",
+  "target": "button:has-text('Add to cart')",
+  "value": "",
+  "rationale": "I want to add these +1.75 reading glasses to my shopping cart. The 'Add to cart' button is located at the bottom-left of the action bar with a white background. I will click it to test cart progression."
+}

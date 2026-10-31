@@ -46,7 +46,7 @@ class PersonaTestRunner:
         self.concurrency = max(1, int(concurrency))
         self.max_personas = max(1, int(max_personas)) if max_personas else None
         self.skill = skill
-        self.engine = engine.lower().strip()
+        self.engine = "antigravity"
         self.keep_open = keep_open
 
     def run_plan(
@@ -67,47 +67,7 @@ class PersonaTestRunner:
         Returns:
             ExecutionRunResult summarizing all persona task outcomes.
         """
-        use_browser_use = False
-        explicit_browser_use = self.engine in ("browser-use", "browser_use")
-        if explicit_browser_use:
-            use_browser_use = True
-        elif self.engine == "auto":
-            from blindspot.execution.browser_use_runner import (
-                is_browser_use_available,
-                resolve_browser_use_llm,
-            )
-            prov_name = getattr(self.provider, "name", "").lower()
-            if prov_name == "antigravity":
-                use_browser_use = False
-            else:
-                use_browser_use = is_browser_use_available() and resolve_browser_use_llm(self.provider) is not None
-
-        if use_browser_use:
-            try:
-                from blindspot.execution.browser_use_runner import BrowserUsePersonaRunner
-                bu_runner = BrowserUsePersonaRunner(
-                    provider=self.provider,
-                    headless=self.headless,
-                    viewport_width=self.viewport_width,
-                    viewport_height=self.viewport_height,
-                    max_actions_per_task=self.max_actions_per_task,
-                    skill=self.skill,
-                    max_personas=self.max_personas,
-                )
-                return bu_runner.run_plan(
-                    plan=plan,
-                    output_dir=output_dir,
-                    on_event=on_event,
-                    cancel_check=cancel_check,
-                )
-            except Exception as exc:
-                if explicit_browser_use:
-                    raise
-                import logging
-                logging.getLogger(__name__).warning(
-                    f"Browser-use runner failed ({exc}); falling back to native engine."
-                )
-
+        # All inspection runs strictly via the Antigravity native execution engine
         run_dir = Path(output_dir)
         run_dir.mkdir(parents=True, exist_ok=True)
         evidence_base = run_dir / "evidence"
@@ -116,6 +76,12 @@ class PersonaTestRunner:
         personas_to_run = plan.personas
         if self.max_personas and self.max_personas > 0:
             personas_to_run = personas_to_run[: self.max_personas]
+
+        if hasattr(self.provider, "start_session"):
+            try:
+                self.provider.start_session()
+            except Exception:
+                pass
 
         import threading
         from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -415,6 +381,12 @@ class PersonaTestRunner:
                         )
                 finally:
                     browser.close()
+
+        if hasattr(self.provider, "stop_session"):
+            try:
+                self.provider.stop_session()
+            except Exception:
+                pass
 
         # Build run result
         run_result = ExecutionRunResult(

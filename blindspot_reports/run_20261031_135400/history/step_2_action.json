@@ -1,0 +1,6 @@
+{
+  "action": "scroll",
+  "target": "window",
+  "value": "400",
+  "rationale": "Elena scrolls down to inspect the policy table, table headers, and lower page layout."
+}

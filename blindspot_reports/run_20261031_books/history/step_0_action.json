@@ -1,0 +1,6 @@
+{
+  "action": "scroll",
+  "target": "document",
+  "value": "down",
+  "rationale": "The product listings are visible, but I cannot see all the products or the bottom of the page clearly. Since I need to follow the main user journey, I will scroll down to see more products and check for page navigation controls, which is important for a novice user."
+}

@@ -16,6 +16,9 @@ def create_provider(config: AIConfig) -> BaseAIProvider:
         )
 
     if provider_name == "ollama":
+        target_model = config.model or "gemma4:e4b"
+        if target_model.strip().lower() in ("gemma4", "gemma", "default"):
+            target_model = "gemma4:e4b"
         try:
             from blindspot.ai.adapter import UnifiedAIAdapter
         except ImportError:
@@ -23,7 +26,7 @@ def create_provider(config: AIConfig) -> BaseAIProvider:
         if UnifiedAIAdapter is not None:
             return UnifiedAIAdapter(
                 provider="ollama",
-                model=config.model or "gemma4",
+                model=target_model,
                 base_url=config.base_url,
                 api_key=config.api_key,
                 api_key_env=config.api_key_env,
@@ -31,7 +34,7 @@ def create_provider(config: AIConfig) -> BaseAIProvider:
             )
         from blindspot.ai.providers.ollama import OllamaProvider
         return OllamaProvider(
-            model=config.model or "gemma4",
+            model=target_model,
             base_url=config.base_url,
             timeout=config.timeout,
         )

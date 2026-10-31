@@ -1,0 +1,6 @@
+{
+  "action": "click",
+  "target": "@e7",
+  "value": "",
+  "rationale": "I am trying to understand the information on this page, and it mentions 'Further Reading' with several links. Since I am interested in the topic, I will start by clicking on the first link, 'IANA-managed Reserved Domains' (@e7), to see what that section is about. The text seems clear enough, but the links are the next logical step to explore the content."
+}

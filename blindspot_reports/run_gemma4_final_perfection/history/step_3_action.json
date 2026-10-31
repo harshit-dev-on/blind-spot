@@ -1,0 +1,6 @@
+{
+  "action": "press",
+  "target": "@e109",
+  "value": "Escape",
+  "rationale": "A large login modal/popup is obscuring the main content of the Flipkart website. As a novice user with low vision, I need to dismiss this overlay immediately to see the catalog and proceed with my shopping journey. I will press 'Escape' to close the pop-up."
+}

@@ -1,0 +1,6 @@
+{
+  "action": "scroll",
+  "target": "body",
+  "value": "down",
+  "rationale": "The page displays a typical e-commerce product listing page under the 'Shop medicines' section. There is a search bar at the top, a filtering/sorting area, and multiple product cards laid out in a grid. The products show images, names, descriptions, original and discounted prices, and a green '+ Add' button. The left sidebar has navigation links, some of which use small icons next to text. The overall layout is dense with product information.. I have only seen the top portion of the product listings. To properly audit the user journey and completeness of the product catalog display, I need to scroll down to view more products and check the layout consistency at the bottom of the page. [Friction observed: For a user with low vision, the product cards are visually dense; while the prices are clear, the combination of small text descriptions and the need to scan many product tiles requires significant cognitive load and fine visual tracking. Furthermore, the left navigation pane relies heavily on small icons, which are not fully descriptive for a novice user.]"
+}

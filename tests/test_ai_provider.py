@@ -65,6 +65,41 @@ def test_extract_json_string_with_conversational_text():
     assert parsed["name"] == "Charlie"
 
 
+def test_strip_thinking_tags():
+    from blindspot.ai.base import strip_thinking_tags
+    raw = "<think>Let me analyze the prompt carefully...</think>Hello, here is the answer."
+    assert strip_thinking_tags(raw) == "Hello, here is the answer."
+
+    raw2 = "<thought>Step 1... Step 2...</thought>Direct answer."
+    assert strip_thinking_tags(raw2) == "Direct answer."
+
+
+def test_extract_json_string_with_thinking_tags():
+    raw = "<think>Thinking about JSON schema: name and age</think>```json\n{\"name\": \"Alice\", \"age\": 30}\n```"
+    extracted = extract_json_string(raw)
+    parsed = json.loads(extracted)
+    assert parsed["name"] == "Alice"
+    assert parsed["age"] == 30
+
+
+def test_ollama_generate_disables_thinking():
+    provider = OllamaProvider(model="gemma4:e4b")
+
+    mock_response = MagicMock(spec=httpx.Response)
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "message": {
+            "content": "<think>Internal thoughts</think>Final non-thinking answer."
+        }
+    }
+
+    with patch.object(httpx.Client, "post", return_value=mock_response) as mock_post:
+        res = provider.generate("Give direct answer")
+        called_payload = mock_post.call_args[1]["json"]
+        assert called_payload["think"] is False
+        assert res.content == "Final non-thinking answer."
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Ollama Provider Tests
 # ─────────────────────────────────────────────────────────────────────────────
@@ -194,6 +229,96 @@ def test_ollama_generate_structured_retry_on_bad_json():
     with patch.object(httpx.Client, "post", side_effect=[bad_resp, good_resp]):
         result = provider.generate_structured("Generate a persona", schema=SamplePersona, max_retries=1)
         assert result.name == "Recovered Persona"
+
+
+def test_ollama_generate_with_image_b64():
+    provider = OllamaProvider(model="gemma4")
+
+    mock_response = MagicMock(spec=httpx.Response)
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "message": {"content": "I see a blue button."},
+        "prompt_eval_count": 25,
+        "eval_count": 8,
+        "total_duration": 100000000,
+    }
+
+    with patch.object(httpx.Client, "post", return_value=mock_response) as mock_post:
+        res = provider.generate("Inspect this UI element", image_b64="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+        assert res.content == "I see a blue button."
+        called_payload = mock_post.call_args[1]["json"]
+        assert "images" in called_payload["messages"][0]
+        assert called_payload["messages"][0]["images"] == ["iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="]
+
+
+def test_ollama_generate_with_data_uri_image():
+    provider = OllamaProvider(model="gemma4")
+
+    mock_response = MagicMock(spec=httpx.Response)
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "message": {"content": "Data URI parsed properly."},
+        "prompt_eval_count": 25,
+        "eval_count": 8,
+        "total_duration": 100000000,
+    }
+
+    raw_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    uri_b64 = f"data:image/png;base64,{raw_b64}"
+
+    with patch.object(httpx.Client, "post", return_value=mock_response) as mock_post:
+        res = provider.generate("Inspect this UI element", image_b64=uri_b64)
+        assert res.content == "Data URI parsed properly."
+        called_payload = mock_post.call_args[1]["json"]
+        # Must strip the data:image/...;base64, prefix for Ollama
+        assert called_payload["messages"][0]["images"] == [raw_b64]
+
+
+def test_ollama_generate_smart_tag_resolution():
+    provider = OllamaProvider(model="gemma4")
+
+    # First call: 404 for model 'gemma4'
+    resp_404 = MagicMock(spec=httpx.Response)
+    resp_404.status_code = 404
+    resp_404.text = "model 'gemma4' not found"
+
+    # Tags probe: returns available models with tag
+    resp_tags = MagicMock(spec=httpx.Response)
+    resp_tags.status_code = 200
+    resp_tags.json.return_value = {"models": [{"name": "gemma4:12b"}]}
+
+    # Second call: 200 with resolved 'gemma4:12b'
+    resp_200 = MagicMock(spec=httpx.Response)
+    resp_200.status_code = 200
+    resp_200.json.return_value = {
+        "model": "gemma4:12b",
+        "message": {"content": "Resolved from gemma4:12b!"},
+    }
+
+    with patch.object(httpx.Client, "post", side_effect=[resp_404, resp_200]), \
+         patch.object(httpx.Client, "get", return_value=resp_tags):
+        res = provider.generate("Hello")
+        assert res.content == "Resolved from gemma4:12b!"
+        assert res.model == "gemma4:12b"
+
+
+def test_openai_compatible_generate_with_image():
+    provider = OpenAICompatibleProvider(model="gpt-4o-mini", api_key="sk-test")
+
+    mock_response = MagicMock(spec=httpx.Response)
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "choices": [{"message": {"content": "OpenAI vision response"}}]
+    }
+
+    with patch.object(httpx.Client, "post", return_value=mock_response) as mock_post:
+        res = provider.generate("Inspect", image_b64="somebase64")
+        assert res.content == "OpenAI vision response"
+        called_payload = mock_post.call_args[1]["json"]
+        user_msg = called_payload["messages"][0]["content"]
+        assert isinstance(user_msg, list)
+        assert user_msg[1]["type"] == "image_url"
+        assert user_msg[1]["image_url"]["url"] == "data:image/png;base64,somebase64"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -402,5 +527,49 @@ def test_antigravity_markdown_persona_parsing():
     assert len(plan_a11y.personas) >= 1
     assert "Alex" in plan_a11y.personas[0].name
     assert len(plan_a11y.personas[0].tasks) == 3
+
+
+def test_ollama_default_model_is_gemma4_e4b():
+    provider = OllamaProvider()
+    assert provider.model == "gemma4:e4b"
+
+
+def test_ollama_lifecycle_start_and_stop_session():
+    provider = OllamaProvider(model="gemma4:e4b")
+
+    mock_load = MagicMock(spec=httpx.Response)
+    mock_load.status_code = 200
+    mock_load.json.return_value = {"done_reason": "load"}
+
+    mock_unload = MagicMock(spec=httpx.Response)
+    mock_unload.status_code = 200
+    mock_unload.json.return_value = {"done_reason": "unload"}
+
+    with patch.object(httpx.Client, "post", side_effect=[mock_load, mock_unload]) as mock_post:
+        # Start session
+        started = provider.start_session()
+        assert started is True
+        call1 = mock_post.call_args_list[0][1]["json"]
+        assert call1["model"] == "gemma4:e4b"
+        assert call1["keep_alive"] == "30m"
+
+        # Stop session
+        stopped = provider.stop_session()
+        assert stopped is True
+        call2 = mock_post.call_args_list[1][1]["json"]
+        assert call2["model"] == "gemma4:e4b"
+        assert call2["keep_alive"] == 0
+
+
+def test_ollama_context_manager_lifecycle():
+    provider = OllamaProvider(model="gemma4:e4b")
+
+    with patch.object(provider, "start_session") as mock_start, \
+         patch.object(provider, "stop_session") as mock_stop:
+        with provider as p:
+            assert p is provider
+            mock_start.assert_called_once()
+            mock_stop.assert_not_called()
+        mock_stop.assert_called_once()
 
 

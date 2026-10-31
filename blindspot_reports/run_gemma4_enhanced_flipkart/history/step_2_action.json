@@ -1,0 +1,6 @@
+{
+  "action": "press",
+  "target": "body",
+  "value": "Escape",
+  "rationale": "There is a large 'Login' modal overlaying the entire page content. As a novice user with low vision, I need to dismiss this popup immediately to access the site's functionality, as the overlay is obstructing my view of the products. I will press 'Escape' to try and close it."
+}

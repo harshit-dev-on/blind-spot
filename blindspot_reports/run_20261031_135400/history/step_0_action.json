@@ -1,0 +1,6 @@
+{
+  "action": "click",
+  "target": "@e1",
+  "value": "",
+  "rationale": "Elena navigates forward by clicking the primary 'Learn more' link to reach the documentation destination."
+}

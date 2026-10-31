@@ -636,6 +636,12 @@ def provider_test(
     except Exception as exc:
         print_error("Generation Error", str(exc))
         raise typer.Exit(code=1)
+    finally:
+        if "p" in locals() and hasattr(p, "stop_session"):
+            try:
+                p.stop_session()
+            except Exception:
+                pass
 
 
 @provider_app.command(
@@ -721,6 +727,12 @@ def provider_prompt(
     except Exception as exc:
         print_error("AI Error", str(exc))
         raise typer.Exit(code=1)
+    finally:
+        if "p" in locals() and hasattr(p, "stop_session"):
+            try:
+                p.stop_session()
+            except Exception:
+                pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1194,6 +1206,14 @@ def inspect(
         )
         effective_cfg = ai_cfg.model_copy(update={"model": effective_model})
         provider_instance = create_provider(effective_cfg)
+        if hasattr(provider_instance, "start_session"):
+            try:
+                provider_instance.start_session()
+            except Exception:
+                pass
+        import atexit
+        if hasattr(provider_instance, "stop_session"):
+            atexit.register(provider_instance.stop_session)
     except Exception as exc:
         print_error(
             title="AI Configuration Error",
@@ -1347,6 +1367,12 @@ def inspect(
             suggestion="Verify directory write permissions or check previous task logs.",
         )
         raise typer.Exit(code=1)
+    finally:
+        if "provider_instance" in locals() and hasattr(provider_instance, "stop_session"):
+            try:
+                provider_instance.stop_session()
+            except Exception:
+                pass
 
 
 @app.command(
@@ -1608,8 +1634,40 @@ def live_cmd(
             help="Timeout in seconds while waiting for agent actions.",
         ),
     ] = 1800,
+    ai_provider: Annotated[
+        Optional[str],
+        typer.Option(
+            "--provider",
+            help="AI provider for live reasoning (default: 'ollama').",
+            show_default=False,
+        ),
+    ] = None,
+    ai_model: Annotated[
+        Optional[str],
+        typer.Option(
+            "--model",
+            "-m",
+            help="AI model name (default: 'gemma4:e4b').",
+            show_default=False,
+        ),
+    ] = None,
+    autonomous: Annotated[
+        bool,
+        typer.Option(
+            "--autonomous/--manual",
+            help="Whether to run autonomously using local Ollama model (default: True).",
+        ),
+    ] = True,
+    max_steps: Annotated[
+        int,
+        typer.Option(
+            "--max-steps",
+            "-s",
+            help="Maximum exploration steps in autonomous mode (default: 5).",
+        ),
+    ] = 5,
 ) -> None:
-    """Run interactive live browser loop controlled by Antigravity via Markdown & next_action.json."""
+    """Run interactive live browser loop controlled by Antigravity or autonomously by Ollama."""
     try:
         from blindspot.runtime.desktop_utils import ensure_default_desktop
         ensure_default_desktop()
@@ -1628,14 +1686,33 @@ def live_cmd(
     from blindspot.mcp.live_browser import run_live_bridge
 
     effective_goal = f"{goal} (Persona: {persona})" if persona and persona.lower() not in goal.lower() else goal
-    run_dir = run_live_bridge(
-        url=effective_target,
-        goal=effective_goal,
-        output_dir=Path(output_dir) if output_dir else None,
-        allow_local=allow_local,
-        timeout_seconds=timeout,
-    )
-    console.print(f"\n[bold green]Live audit completed![/bold green] Report saved to: [cyan]{run_dir}[/cyan]")
+    try:
+        run_dir = run_live_bridge(
+            url=effective_target,
+            goal=effective_goal,
+            output_dir=Path(output_dir) if output_dir else None,
+            allow_local=allow_local,
+            timeout_seconds=timeout,
+            provider=ai_provider,
+            model=ai_model,
+            autonomous=autonomous,
+            max_steps=max_steps,
+        )
+        console.print(f"\n[bold green]Live audit completed![/bold green] Report saved to: [cyan]{run_dir}[/cyan]")
+    except PermissionError as pe:
+        out_flag = f' -o "{output_dir}"' if output_dir else ""
+        print_error(
+            title="Localhost Access Blocked",
+            message=str(pe),
+            suggestion=f"To audit local development servers, include the [bold cyan]--allow-local[/bold cyan] flag:\n  [bold green]blindspot live \"{effective_target}\" --allow-local{out_flag}[/bold green]",
+        )
+        raise typer.Exit(code=1)
+    except Exception as exc:
+        print_error(
+            title="Live Audit Failed",
+            message=str(exc),
+        )
+        raise typer.Exit(code=1)
 
 
 @app.command(
@@ -1675,9 +1752,27 @@ def step_cmd(
     output_dir: Annotated[Optional[str], typer.Option("--output-dir", "-o", help="Custom output directory.")] = None,
     allow_local: Annotated[bool, typer.Option("--allow-local", help="Allow loopback.")] = False,
     timeout: Annotated[int, typer.Option("--timeout", help="Timeout in seconds.")] = 1800,
+    ai_provider: Annotated[Optional[str], typer.Option("--provider", help="AI provider.")] = None,
+    ai_model: Annotated[Optional[str], typer.Option("--model", "-m", help="AI model.")] = None,
+    autonomous: Annotated[bool, typer.Option("--autonomous/--manual", help="Autonomous mode.")] = True,
+    max_steps: Annotated[int, typer.Option("--max-steps", "-s", help="Max steps.")] = 5,
 ) -> None:
     """Alias for live_cmd."""
-    live_cmd(target_arg=target_arg, target=target, url=url, goal=goal, persona=persona, personas=personas, output_dir=output_dir, allow_local=allow_local, timeout=timeout)
+    live_cmd(
+        target_arg=target_arg,
+        target=target,
+        url=url,
+        goal=goal,
+        persona=persona,
+        personas=personas,
+        output_dir=output_dir,
+        allow_local=allow_local,
+        timeout=timeout,
+        ai_provider=ai_provider,
+        ai_model=ai_model,
+        autonomous=autonomous,
+        max_steps=max_steps,
+    )
 
 
 @app.command(

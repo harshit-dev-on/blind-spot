@@ -1,0 +1,6 @@
+{
+  "action": "click",
+  "target": "@e7",
+  "value": "",
+  "rationale": "Elena notices the cart badge incremented to 1 and clicks '\ud83d\uded2 My cart' in the sidebar to review her items."
+}

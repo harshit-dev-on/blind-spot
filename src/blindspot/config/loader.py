@@ -150,8 +150,8 @@ def parse_model_route(route: str) -> tuple[str, str, str]:
         return "cloud", "openai", cleaned
     if low.startswith("claude"):
         return "cloud", "anthropic", cleaned
-    if low in ("gemma", "gemma4", "llama", "llama3", "mistral", "qwen", "phi3"):
-        return "local", "ollama", cleaned
+    if low in ("gemma", "gemma4", "gemma4:e4b", "llama", "llama3", "mistral", "qwen", "phi3") or low.startswith("gemma"):
+        return "local", "ollama", "gemma4:e4b" if low in ("gemma", "gemma4") else cleaned
 
     return "local", "antigravity", "antigravity-brain"
 
@@ -223,6 +223,9 @@ def load_config(
         ai_data["category"] = category
     if provider:
         ai_data["provider"] = provider
+        if not model and (ai_data.get("model") in (None, "antigravity-brain")):
+            if provider.lower() == "ollama":
+                ai_data["model"] = "gemma4:e4b"
     if model:
         ai_data["model"] = model
     if base_url:

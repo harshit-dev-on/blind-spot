@@ -1,0 +1,6 @@
+{
+  "action": "press",
+  "target": "@e3",
+  "value": "Enter",
+  "rationale": "The search suggestions dropdown appeared with faint blue subcategory labels that have low visual contrast. To view the full product catalog and listings, I will press 'Enter' on the search input."
+}

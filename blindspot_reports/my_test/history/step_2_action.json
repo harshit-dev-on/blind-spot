@@ -1,0 +1,6 @@
+{
+  "action": "scroll",
+  "target": "body",
+  "value": "down",
+  "rationale": "The page displays an online pharmacy interface. The left sidebar has navigation links (Overview, Shop medicines, Prescription, My cart, My orders, My profile) with small text. The main area is titled 'Shop medicines' and shows several product cards arranged in a grid/list format, each featuring an image, product name, price, and an 'Add' button. There are search bars and filter/sort dropdowns above the product listings. The font sizes across the interface, particularly in the sidebar and product descriptions, appear small.. To thoroughly audit the user journey and product browsing experience, I need to see all the available products and content below the fold to assess overall layout consistency and readability, especially given the existing small text size issues. [Friction observed: The font size in the left navigation menu is very small, posing a significant readability challenge for a low-vision user. Also, the product card text (e.g., 'Everyday Care \u00b7 Pack of 10 tablets') is dense and small.]"
+}

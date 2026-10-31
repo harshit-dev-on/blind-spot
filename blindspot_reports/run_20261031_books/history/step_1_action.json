@@ -1,0 +1,6 @@
+{
+  "action": "scroll",
+  "target": "body",
+  "value": "down",
+  "rationale": "The page has a lot of content, and I need to scroll down to see all the available books and options, as the initial view is quite dense. Scrolling will help me get a better overview of the products available."
+}

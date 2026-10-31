@@ -250,6 +250,11 @@ def run_pipeline(
                         loaded_cfg = load_config(provider=config.ai_provider, model=config.ai_model)
                         ai_cfg = loaded_cfg.ai
                         provider_instance = create_provider(ai_cfg)
+                        if hasattr(provider_instance, "start_session"):
+                            try:
+                                provider_instance.start_session()
+                            except Exception:
+                                pass
                     except Exception:
                         pass
             else:
@@ -263,6 +268,11 @@ def run_pipeline(
                 )
                 effective_cfg = ai_cfg.model_copy(update={"model": effective_model})
                 provider_instance = create_provider(effective_cfg)
+                if hasattr(provider_instance, "start_session"):
+                    try:
+                        provider_instance.start_session()
+                    except Exception:
+                        pass
 
                 plan = generate_personas_and_tasks(
                     inspection_result=inspection,
@@ -368,3 +378,9 @@ def run_pipeline(
             "error": str(exc),
         })
         raise
+    finally:
+        if provider_instance and hasattr(provider_instance, "stop_session"):
+            try:
+                provider_instance.stop_session()
+            except Exception:
+                pass

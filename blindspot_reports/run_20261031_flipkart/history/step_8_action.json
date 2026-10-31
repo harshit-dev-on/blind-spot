@@ -1,0 +1,6 @@
+{
+  "action": "click",
+  "target": "@e6",
+  "value": "",
+  "rationale": "I want to inspect the Cart page to see how shopping basket items, pricing summaries, and checkout triggers are presented to a senior user. I will click the 'Cart' link in the top navigation."
+}

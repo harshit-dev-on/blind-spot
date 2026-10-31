@@ -12,7 +12,7 @@ except ImportError as exc:
         "Repair it with: python -m pip install --upgrade blindspot1"
     ) from exc
 
-from blindspot.ai.base import BaseAIProvider
+from blindspot.ai.base import BaseAIProvider, mask_api_key, strip_thinking_tags
 from blindspot.ai.exceptions import (
     AIAuthenticationError,
     AIConnectionError,
@@ -21,7 +21,6 @@ from blindspot.ai.exceptions import (
     AIProviderError,
 )
 from blindspot.ai.models import AIResponse, ProviderStatus
-from blindspot.ai.base import mask_api_key
 
 # Suppress noisy debug logs and drop unsupported provider parameters automatically
 import logging
@@ -31,7 +30,7 @@ litellm.drop_params = True
 
 
 DEFAULT_PROVIDER_MODELS: Dict[str, str] = {
-    "ollama": "gemma4",
+    "ollama": "gemma4:e4b",
     "gemini": "gemini-3.8-flash",
     "openai": "gpt-4o-mini",
     "anthropic": "claude-3-5-sonnet-20241022",
@@ -56,7 +55,7 @@ DEFAULT_BASE_URLS: Dict[str, str] = {
 }
 
 CURATED_MODELS: Dict[str, List[str]] = {
-    "ollama": ["gemma4", "llama3.2", "mistral", "phi3", "qwen2.5"],
+    "ollama": ["gemma4", "gemma4:12b", "gemma4:e4b", "llama3.2", "mistral", "phi3", "qwen2.5"],
     "gemini": ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.7-flash", "gemini-2.5-flash"],
     "openai": ["gpt-4o-mini", "gpt-4o", "o3-mini", "gpt-4-turbo"],
     "anthropic": ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022", "claude-3-opus-20240229"],
@@ -84,8 +83,10 @@ class UnifiedAIAdapter(BaseAIProvider):
         timeout: float = 60.0,
     ) -> None:
         self._provider_name = provider.lower().strip()
-        default_model = DEFAULT_PROVIDER_MODELS.get(self._provider_name, "gemma4")
+        default_model = DEFAULT_PROVIDER_MODELS.get(self._provider_name, "gemma4:e4b")
         chosen_model = model.strip() if model else default_model
+        if self._provider_name == "ollama" and chosen_model.lower() in ("gemma4", "gemma", "default"):
+            chosen_model = "gemma4:e4b"
 
         super().__init__(model=chosen_model, base_url=base_url, timeout=timeout)
 
@@ -128,6 +129,42 @@ class UnifiedAIAdapter(BaseAIProvider):
             return m if m.startswith("openai/") else f"openai/{m}"
 
         return m
+
+    def start_session(self) -> bool:
+        """Start running and warm/preload the model if using Ollama provider."""
+        if self._provider_name == "ollama":
+            base_url = self.base_url or DEFAULT_BASE_URLS.get("ollama", "http://localhost:11434")
+            try:
+                with httpx.Client(timeout=min(self.timeout, 120.0)) as client:
+                    res = client.post(
+                        f"{base_url.rstrip('/')}/api/generate",
+                        json={"model": self.model, "keep_alive": "30m"},
+                    )
+                    return res.status_code == 200
+            except Exception:
+                return False
+        return True
+
+    def stop_session(self) -> bool:
+        """Stop running and unload the model if using Ollama provider."""
+        if self._provider_name == "ollama":
+            base_url = self.base_url or DEFAULT_BASE_URLS.get("ollama", "http://localhost:11434")
+            try:
+                with httpx.Client(timeout=10.0) as client:
+                    client.post(
+                        f"{base_url.rstrip('/')}/api/generate",
+                        json={"model": self.model, "keep_alive": 0},
+                    )
+            except Exception:
+                pass
+
+            try:
+                import subprocess
+                subprocess.run(["ollama", "stop", self.model], capture_output=True, timeout=5)
+            except Exception:
+                pass
+            return True
+        return True
 
     def check_health(self) -> ProviderStatus:
         """Test endpoint connectivity, authentication, and model availability."""
@@ -280,7 +317,14 @@ class UnifiedAIAdapter(BaseAIProvider):
                 data = res.json()
                 models = [m.get("name", "") for m in data.get("models", [])]
                 target = self.model.lower()
-                found = any(target == m.lower() or m.lower().startswith(f"{target}:") for m in models)
+                base_family = target.split(":")[0] if ":" in target else target
+                found = any(
+                    target == m.lower()
+                    or m.lower() == base_family
+                    or m.lower().startswith(f"{base_family}:")
+                    or m.lower().startswith(f"{target}:")
+                    for m in models
+                )
 
                 if not found:
                     return ProviderStatus(
@@ -343,13 +387,18 @@ class UnifiedAIAdapter(BaseAIProvider):
         if system_prompt and system_prompt.strip():
             messages.append({"role": "system", "content": system_prompt.strip()})
 
-        if image_b64:
+        if image_b64 and image_b64.strip():
+            clean_b64 = image_b64.strip()
+            if clean_b64.startswith("data:"):
+                image_url = clean_b64
+            else:
+                image_url = f"data:image/png;base64,{clean_b64}"
             user_content = [
                 {"type": "text", "text": prompt.strip()},
                 {
                     "type": "image_url",
                     "image_url": {
-                        "url": f"data:image/png;base64,{image_b64}"
+                        "url": image_url
                     },
                 },
             ]
@@ -373,8 +422,12 @@ class UnifiedAIAdapter(BaseAIProvider):
             "timeout": self.timeout,
         }
 
-        if self.base_url:
-            kwargs["api_base"] = self.base_url
+        if self._provider_name == "ollama":
+            kwargs["extra_body"] = {"think": False}
+
+        effective_base_url = self.base_url or DEFAULT_BASE_URLS.get(self._provider_name)
+        if effective_base_url:
+            kwargs["api_base"] = effective_base_url
         if self._api_key:
             kwargs["api_key"] = self._api_key
         if format_json:
@@ -397,7 +450,8 @@ class UnifiedAIAdapter(BaseAIProvider):
 
                         # Extract content safely
                         choices = getattr(resp, "choices", [])
-                        content = choices[0].message.content if choices else ""
+                        raw_content = choices[0].message.content if choices else ""
+                        content = strip_thinking_tags(raw_content) if raw_content else ""
                         usage = dict(resp.usage) if getattr(resp, "usage", None) else None
 
                         return AIResponse(

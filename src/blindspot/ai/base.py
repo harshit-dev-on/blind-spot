@@ -12,11 +12,20 @@ from blindspot.ai.models import AIResponse, ProviderStatus
 T = TypeVar("T", bound=BaseModel)
 
 
+def strip_thinking_tags(text: str) -> str:
+    """Remove any <think>...</think> or <thought>...</thought> tags and content."""
+    if not text:
+        return ""
+    cleaned = re.sub(r"<(?:think|thought)>[\s\S]*?</(?:think|thought)>", "", text, flags=re.IGNORECASE)
+    cleaned = re.sub(r"</?(?:think|thought)>", "", cleaned, flags=re.IGNORECASE)
+    return cleaned.strip()
+
+
 def extract_json_string(text: str) -> str:
     """Extract a JSON substring from a model response.
 
     Handles raw JSON, markdown-fenced code blocks (```json ... ```),
-    and responses with leading or trailing explanatory text.
+    thinking tags (<think>...</think>), and responses with leading or trailing explanatory text.
 
     Args:
         text: Raw text string from the model.
@@ -24,7 +33,7 @@ def extract_json_string(text: str) -> str:
     Returns:
         Extracted candidate JSON string.
     """
-    clean_text = text.strip()
+    clean_text = strip_thinking_tags(text)
 
     # 1. Check for fenced code blocks with ```json or ```
     fenced_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", clean_text, re.IGNORECASE)
@@ -77,6 +86,21 @@ class BaseAIProvider(ABC):
     def timeout(self) -> float:
         """Timeout in seconds for API requests."""
         return self._timeout
+
+    def start_session(self) -> bool:
+        """Initialize or warm up resources at the start of an inspection task."""
+        return True
+
+    def stop_session(self) -> bool:
+        """Release or unload resources when the inspection task finishes."""
+        return True
+
+    def __enter__(self) -> "BaseAIProvider":
+        self.start_session()
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        self.stop_session()
 
     @abstractmethod
     def check_health(self) -> ProviderStatus:

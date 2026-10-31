@@ -1,0 +1,6 @@
+{
+  "action": "press",
+  "target": "@e3",
+  "value": "Enter",
+  "rationale": "Elena finished typing the search query and now presses 'Enter' to view search results."
+}

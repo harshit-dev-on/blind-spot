@@ -1,0 +1,6 @@
+{
+  "action": "press",
+  "target": "body",
+  "value": "Escape",
+  "rationale": "There is a large, intrusive 'Login' modal overlaying most of the homepage content. Since my priority is to start shopping, I must dismiss this popup first to see the product catalog clearly. I will use the Escape key to close it."
+}

@@ -1,0 +1,6 @@
+{
+  "action": "scroll",
+  "target": "body",
+  "value": "down",
+  "rationale": "The page is the homepage of MediCare. It features a prominent search bar at the top. The navigation menu on the left is clear but uses small text and icons. The main content area has a large promotional banner ('Good morning, Alex \ud83d\udc4b') followed by product categories presented as clickable tiles (e.g., 'All products', 'Pain relief'). Below this are 'Popular products' displayed in a horizontal scrollable section.. To thoroughly audit the user journey, I need to see the entire page content, especially the full listing of 'Popular products' and any content below the fold, to evaluate the layout and readability of the product cards. [Friction observed: For a low-vision user, the small font sizes in the navigation menu and the general density of information, especially the small text labels on the category tiles, could cause significant visual strain. The contrast seems generally acceptable for text on white, but the icons in the navigation are small.]"
+}

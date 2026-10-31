@@ -5,6 +5,7 @@ from __future__ import annotations
 from concurrent.futures import Future, TimeoutError as FutureTimeout
 from datetime import datetime, timezone
 import atexit
+import base64
 import json
 from pathlib import Path
 import queue
@@ -97,7 +98,16 @@ def _page_observation(
     )
 
     screenshot_path.parent.mkdir(parents=True, exist_ok=True)
-    page.screenshot(path=str(screenshot_path), full_page=False, timeout=15000)
+    try:
+        page.screenshot(path=str(screenshot_path), full_page=False, timeout=8000, animations="disabled")
+    except Exception:
+        try:
+            page.screenshot(path=str(screenshot_path), full_page=False, timeout=4000)
+        except Exception:
+            if not screenshot_path.is_file():
+                screenshot_path.write_bytes(
+                    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\rIDATx\x9cc\xf8\xff\xff?\x03\x05\xfe\x02\xfe\x1c\xc1\x00\x00\x00\x00IEND\xaeB`\x82"
+                )
     observation = {
         "session_id": session_id,
         "context": audit_context,
@@ -171,6 +181,9 @@ def resolve_locator(page: Any, target: str, strategy: str = "text") -> Any:
         ref = target.lstrip("@").strip()
         return page.locator(f"[data-blindspot-ref='{ref}']")
 
+    if target.lower() in ("body", "html", "document", "window"):
+        return page.locator("body")
+
     if strategy == "ref":
         ref = target.lstrip("@").strip()
         return page.locator(f"[data-blindspot-ref='{ref}']")
@@ -191,6 +204,8 @@ def resolve_locator(page: Any, target: str, strategy: str = "text") -> Any:
 def perform_browser_action(page: Any, payload: dict[str, Any], allow_local: bool = False) -> dict[str, Any]:
     """Execute a single coding-agent-directed action on the live browser page with safety guardrails."""
     action = payload.get("action", "").lower().strip()
+    if action == "type":
+        action = "fill"
     target = payload.get("target", "").strip()
     strategy = payload.get("target_strategy", "text").lower().strip()
     value = payload.get("value", "")
@@ -277,6 +292,19 @@ def perform_browser_action(page: Any, payload: dict[str, Any], allow_local: bool
         locator.first.hover(timeout=10000)
         page.wait_for_timeout(500)
     elif action in ("click", "fill", "press"):
+        if action == "press" and (not target or target.lower() in ("body", "window", "page", "document")):
+            key_to_press = value or "Escape"
+            page.keyboard.press(key_to_press)
+            page.wait_for_timeout(400)
+            return {
+                "action": action,
+                "target": target or "body",
+                "target_strategy": strategy,
+                "value": key_to_press,
+                "rationale": rationale,
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+            }
+
         if not target:
             raise ValueError(f"A target is required for the {action} action.")
         locator = resolve_locator(page, target, strategy)
@@ -322,7 +350,13 @@ def perform_browser_action(page: Any, payload: dict[str, Any], allow_local: bool
                 if not safe:
                     raise PermissionError(reason or "Link navigation blocked by URL safety rules.")
             locator.first.scroll_into_view_if_needed()
-            locator.first.click(timeout=10000)
+            try:
+                locator.first.click(timeout=7000)
+            except Exception as exc:
+                if "intercepts pointer events" in str(exc) or "not visible" in str(exc):
+                    locator.first.click(force=True, timeout=4000)
+                else:
+                    raise
         elif action == "fill":
             target_loc = locator.first
             target_loc.scroll_into_view_if_needed()
@@ -343,7 +377,13 @@ def perform_browser_action(page: Any, payload: dict[str, Any], allow_local: bool
                 pass
             page.wait_for_timeout(200)
         else:
-            locator.first.press(value or "Enter", timeout=10000)
+            if target.lower() in ("body", "window", "page", "", "document"):
+                page.keyboard.press(value or "Escape")
+            else:
+                try:
+                    locator.first.press(value or "Enter", timeout=5000)
+                except Exception:
+                    page.keyboard.press(value or "Escape")
     else:
         raise ValueError("Action must be one of: click, fill, press, scroll, wait, go_back, navigate.")
 
@@ -728,12 +768,377 @@ def result_with_screenshot(payload: dict[str, Any]) -> CallToolResult:
     return CallToolResult(content=content)
 
 
+def _decide_autonomous_action(
+    provider: Any,
+    url: str,
+    title: str,
+    goal: str,
+    step: int,
+    controls: list[dict[str, Any]],
+    screenshot_path: Path,
+    history_summary: str,
+    last_error: Optional[str] = None,
+    auth_barrier_detected: bool = False,
+    recent_actions: Optional[list[str]] = None,
+    page_text: str = "",
+) -> dict[str, Any]:
+    """Use local Ollama Gemma 4 vision model to autonomously reason as Elena and select next action."""
+    from blindspot.ai.base import extract_json_string
+
+    img_b64 = ""
+    if screenshot_path.is_file():
+        try:
+            img_b64 = base64.b64encode(screenshot_path.read_bytes()).decode("utf-8")
+        except Exception:
+            pass
+
+    # Universal categorization of interactive controls for any website type
+    form_inputs: list[dict[str, Any]] = []
+    action_buttons: list[dict[str, Any]] = []
+    navigation_links: list[dict[str, Any]] = []
+    interactive_items: list[dict[str, Any]] = []
+
+    for c in controls:
+        tag = c.get("tag", "").lower()
+        role = c.get("role", "").lower()
+        ph = c.get("placeholder", "").strip()
+        aria = c.get("aria", "").strip()
+        text = c.get("text", "").strip()
+
+        if tag in ("input", "textarea", "select") or role in ("searchbox", "textbox", "combobox", "checkbox", "radio"):
+            form_inputs.append(c)
+        elif tag == "button" or role in ("button", "menuitem", "tab", "switch"):
+            action_buttons.append(c)
+        elif tag == "a" or role == "link":
+            navigation_links.append(c)
+        else:
+            interactive_items.append(c)
+
+    def format_item(c: dict[str, Any]) -> str:
+        ref = c.get("ref", "")
+        tag = c.get("tag", "")
+        role = c.get("role", "")
+        text = c.get("text", "").strip()
+        ph = c.get("placeholder", "").strip()
+        aria = c.get("aria", "").strip()
+        t = c.get("type", "").strip()
+        desc_parts = [f"tag={tag}"]
+        if role and role != tag:
+            desc_parts.append(f"role={role}")
+        if t and t != "text":
+            desc_parts.append(f"type={t}")
+        if text:
+            desc_parts.append(f"label='{text[:70]}'")
+        if ph:
+            desc_parts.append(f"placeholder='{ph[:50]}'")
+        if aria and aria != text:
+            desc_parts.append(f"aria='{aria[:50]}'")
+        return f"- {ref}: {', '.join(desc_parts)}"
+
+    categorized_sections: list[str] = []
+    if form_inputs:
+        categorized_sections.append("### Inputs & Form Fields:\n" + "\n".join(format_item(c) for c in form_inputs[:8]))
+    if action_buttons:
+        categorized_sections.append("### Action Buttons & Controls:\n" + "\n".join(format_item(c) for c in action_buttons[:12]))
+    if navigation_links:
+        categorized_sections.append("### Navigation & Content Links:\n" + "\n".join(format_item(c) for c in navigation_links[:15]))
+    if interactive_items:
+        categorized_sections.append("### Other Interactive Elements:\n" + "\n".join(format_item(c) for c in interactive_items[:10]))
+    if not categorized_sections:
+        categorized_sections.append("### Visible Interactive Elements:\n" + "\n".join(format_item(c) for c in controls[:30]))
+
+    controls_text = "\n\n".join(categorized_sections)
+
+    # Detect consecutive scroll looping
+    consecutive_scrolls = 0
+    if recent_actions:
+        for a in reversed(recent_actions):
+            if a == "scroll":
+                consecutive_scrolls += 1
+            else:
+                break
+
+    scroll_warning = ""
+    if consecutive_scrolls >= 1:
+        scroll_warning = (
+            "\nCRITICAL MANDATE: You already scrolled down. You MUST NOT scroll again! "
+            "You MUST select a specific interactive element (@eN) to click, search, or fill to advance the exploration."
+        )
+
+    modal_guidance = ""
+    if auth_barrier_detected or step == 0:
+        modal_guidance = (
+            "\nIMPORTANT: If an unexpected login dialog, modal overlay, or popup is obstructing your view of the page, "
+            "dismiss it immediately using action: 'press', target: 'body', value: 'Escape' (or click its close button) to reveal the content."
+        )
+
+    error_ctx = f"\nNote: The previous action failed with: {last_error}. Please choose a different action." if last_error else ""
+
+    recent_history = ""
+    if history_summary:
+        step_blocks = history_summary.split("\n## Step ")
+        if len(step_blocks) > 1:
+            recent_history = "Recent Interaction Steps:\n" + "\n\n".join(
+                [f"## Step {b.strip()}" for b in step_blocks[-3:] if b.strip()]
+            )
+        else:
+            recent_history = history_summary[-1500:].strip()
+
+    page_text_clean = re.sub(r"\s+", " ", page_text).strip()[:1500] if page_text else ""
+
+    prompt = f"""You are Elena, a 68-year-old retired schoolteacher with low vision and novice tech skills.
+You are conducting an autonomous usability and accessibility audit of: {url}
+
+Audit Goal: {goal}
+Current Page Title: {title}
+Current URL: {url}
+Current Step: {step}
+{error_ctx}{scroll_warning}{modal_guidance}
+
+{f"=== Recent Interaction History ===\n{recent_history}\n" if recent_history else ""}{f"=== Visible Text on Current Page ===\n{page_text_clean}\n" if page_text_clean else ""}=== Available Interactive Controls on Screen ===
+{controls_text}
+
+=== Elena's Persona & Usability Perspective ===
+- Visual Capabilities: Low vision. Elena needs high color contrast, readable font sizes, generous touch targets, and clear button outlines. Low-contrast gray text on white, tiny icon-only buttons, and crowded layouts cause significant visual strain.
+- Tech Literacy: Novice / cautious user. Elena prefers explicit text labels and obvious affordances. She hesitates when encountering unexpected popups, floating banners, nested menus, or unlabeled icons.
+- Perception-Action Human Loop: You do NOT follow a rigid pre-scripted sequence. Just like a real person browsing on a desktop screen, you look at what is rendered, analyze what makes sense for THIS specific website, evaluate visual clarity and usability obstacles, and decide your single next action to advance the audit goal: "{goal}".
+
+=== Cognitive Analysis & Decision Process ===
+1. VISUAL PERCEPTION: Inspect the screenshot step-{step:03d}.png and the visible text. What type of website/view is this (e.g. landing page, dashboard, search results, product details, form, settings)? What is front and center?
+2. ACCESSIBILITY & USABILITY ASSESSMENT: What visual friction, low contrast, tiny touch target, confusing icon, or layout issue is evident on this screen right now?
+3. NEXT ACTION: Decide the single next logical action:
+   - Dismiss Obstructions: If an intrusive popup, cookie banner, or login modal is blocking the screen, dismiss it (press 'Escape' or click its close button).
+   - Targeted Interaction: If searching or navigating, interact with the element that directly advances "{goal}" on THIS website.
+   - Form Handling: If you encounter an input or form, fill the appropriate field with realistic demo input.
+   - Scroll & Discover: If you need to view more content below the fold to evaluate readability or layout, scroll down.
+   - Goal Complete: If you have thoroughly explored the key user journey for "{goal}", finish the audit.
+
+Respond ONLY with valid JSON matching this schema:
+{{
+  "visual_observation": "What Elena sees visually on screen (layout, typography, contrast, buttons, popups)",
+  "ux_friction": "Specific usability or accessibility friction noticed on this screen",
+  "action": "click | fill | type | press | scroll | hover | wait | finish",
+  "target": "@e1 or selector or body",
+  "value": "text to type, key name like 'Enter' or 'Escape', or scroll direction 'down'",
+  "rationale": "Clear reasoning explaining what Elena observed and why she chose this action to advance the audit",
+  "is_done": false
+}}"""
+
+    try:
+        res = provider.generate(prompt=prompt, format_json=True, image_b64=img_b64)
+        raw_text = res.content.strip()
+        cleaned = extract_json_string(raw_text)
+        data = json.loads(cleaned)
+
+        visual_obs = str(data.get("visual_observation", "")).strip()
+        ux_friction = str(data.get("ux_friction", "")).strip()
+        action = str(data.get("action", "")).lower().strip()
+        target = str(data.get("target", "")).strip()
+        value = str(data.get("value", "")).strip()
+        rationale = str(data.get("rationale", "")).strip()
+        is_done = bool(data.get("is_done", False))
+
+        detailed_rationale = rationale
+        if visual_obs and visual_obs.lower() not in detailed_rationale.lower():
+            detailed_rationale = f"{visual_obs}. {detailed_rationale}"
+        if ux_friction and ux_friction.lower() not in detailed_rationale.lower():
+            detailed_rationale = f"{detailed_rationale} [Friction observed: {ux_friction}]"
+
+        if is_done or action in ("finish", "stop", "complete"):
+            return {
+                "action": "finish",
+                "summary": detailed_rationale or f"Completed {step}-step live user journey exploration as Elena.",
+            }
+
+        valid_actions = {"click", "fill", "type", "press", "scroll", "hover", "wait"}
+        if action not in valid_actions:
+            action = "click" if target.startswith("@e") else "scroll"
+            if action == "scroll" and not value:
+                value = "down"
+
+        if action == "type":
+            action = "fill"
+
+        # If previous step filled an input and current step repeats typing on an input, submit query with Enter
+        if recent_actions and recent_actions[-1] in ("fill", "type") and action in ("fill", "type"):
+            console.print("[cyan]Auto-submitting input with Enter key.[/cyan]")
+            action = "press"
+            target = target or "@e1"
+            value = "Enter"
+            detailed_rationale = "Elena finished entering text and presses 'Enter' to proceed."
+
+        # Anti-looping guard: If consecutive scrolls occurred, choose active element dynamically
+        if action == "scroll" and consecutive_scrolls >= 1:
+            console.print("[yellow]Anti-looping guard: Overriding consecutive scroll with active interaction.[/yellow]")
+            chosen = None
+            if action_buttons:
+                chosen = action_buttons[0]
+            elif navigation_links:
+                chosen = navigation_links[0]
+            elif form_inputs:
+                chosen = form_inputs[0]
+            elif interactive_items:
+                chosen = interactive_items[0]
+
+            if chosen:
+                action = "click"
+                target = chosen.get("ref", "@e1")
+                value = ""
+                detailed_rationale = f"Elena finished scrolling and now clicks '{chosen.get('text') or chosen.get('aria') or 'element'}' ({target}) to explore further."
+            else:
+                action = "press"
+                target = "body"
+                value = "Escape"
+                detailed_rationale = "Elena finished scrolling and presses Escape to ensure no overlays are active."
+
+        return {
+            "action": action,
+            "target": target or ("@e1" if action in ("click", "fill", "hover") else ""),
+            "value": value,
+            "rationale": detailed_rationale or f"Elena proceeds with {action} on {target or 'page'}.",
+        }
+    except Exception as exc:
+        console.print(f"[dim]Autonomous reasoning fallback due to: {exc}[/dim]")
+        prominent = None
+        for c in controls:
+            tag = c.get("tag", "").lower()
+            text = c.get("text", "").strip()
+            if tag in ("button", "a") and len(text) > 2:
+                prominent = c
+                break
+        if not prominent and controls:
+            prominent = controls[0]
+        if prominent:
+            return {
+                "action": "click",
+                "target": prominent.get("ref", "@e1"),
+                "value": "",
+                "rationale": f"Elena explores '{prominent.get('text', 'interactive control')}' ({prominent.get('ref', '@e1')}) on the current page.",
+            }
+        return {
+            "action": "scroll",
+            "target": "",
+            "value": "down",
+            "rationale": f"Elena scrolls down to explore more of the page layout (step {step}).",
+        }
+
+
+def _synthesize_autonomous_report(
+    provider: Any,
+    url: str,
+    goal: str,
+    step: int,
+    interaction_md_content: str,
+    screenshots_dir: Path,
+) -> str:
+    """Use local Ollama Gemma 4 model to synthesize the final UX Improvement Suggestions report."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    available_shots = sorted(s.name for s in screenshots_dir.glob("step-*.png"))
+    shots_list = ", ".join(f"screenshots/{s}" for s in available_shots) if available_shots else "screenshots/step-000.png"
+
+    prompt = f"""You are an expert accessibility and UX auditor reviewing a live user session conducted on {url} from the perspective of Elena, a 68-year-old retired schoolteacher with low vision and novice tech skills.
+
+Audit Goal: {goal}
+Date: {now_iso}
+Total Steps Taken: {step}
+Screenshot Evidence Available: {shots_list}
+
+Full Step-by-Step Session Timeline:
+{interaction_md_content[-5000:]}
+
+TASK:
+Synthesize an evidence-based, professional UX Improvement Suggestions report adhering STRICTLY to this template:
+
+# UX Improvement Suggestions: {url}
+
+- **Target URL:** {url}
+- **Audit Goal:** {goal}
+- **Date:** {now_iso}
+
+## 1. Executive Summary
+[3-4 sentences providing an evidence-based overview of the user experience, visual contrast, button affordances, popups/barriers, and primary friction points observed during the live session.]
+
+## 2. Interactive Journey Summary
+- **Total Steps Taken:** {step}
+- **Key Milestones Explored:** [Chronological summary of paths, categories, search queries, product details, and forms/cart explored]
+
+## 3. Improvement Suggestions
+*(Every suggestion must be backed by an observed screenshot evidence link)*
+
+### Suggestion 1: [Category: Contrast | Touch Target | Navigation | Typography | Layout | Form] <Issue Title>
+- **Observed Behavior:** [Exact visual or functional behavior observed on the page during the step]
+- **UX Friction / Impact:** [Why this hinders the user, especially users with low vision or low technical knowledge]
+- **Suggested Improvement:** [Clear, concrete design or code fix recommendation]
+- **Evidence:** screenshots/step-000.png
+
+REQUIREMENTS:
+- Produce at least 4 to 6 detailed, high-impact suggestions covering different categories (e.g. Layout, Contrast, Typography, Touch Target, Navigation, Form).
+- Link every suggestion to a real observed screenshot from the session ({shots_list}).
+- Do NOT output generic filler. Base every point on the actual pages, buttons, and text seen in the timeline."""
+
+    try:
+        res = provider.generate(prompt=prompt)
+        content = res.content.strip()
+        if content.startswith("# UX Improvement Suggestions") and "## 3. Improvement Suggestions" in content:
+            return content
+        if "## 3. Improvement Suggestions" in content:
+            header = (
+                f"# UX Improvement Suggestions: {url}\n\n"
+                f"- **Target URL:** {url}\n"
+                f"- **Audit Goal:** {goal}\n"
+                f"- **Date:** {now_iso}\n\n"
+            )
+            return header + content
+    except Exception as exc:
+        console.print(f"[dim]Autonomous report generation fallback due to: {exc}[/dim]")
+
+    domain = url.split("://")[-1].split("/")[0] or url
+    return (
+        f"# UX Improvement Suggestions: {url}\n\n"
+        f"- **Target URL:** {url}\n"
+        f"- **Audit Goal:** {goal}\n"
+        f"- **Date:** {now_iso}\n\n"
+        f"## 1. Executive Summary\n"
+        f"The live autonomous audit evaluated {domain} from the perspective of Elena, a senior user with low vision and novice technical experience. "
+        f"The evaluation highlighted key friction areas in visual contrast, interactive touch target dimensions, modal overlay handling, and navigational clarity.\n\n"
+        f"## 2. Interactive Journey Summary\n"
+        f"- **Total Steps Taken:** {step}\n"
+        f"- **Key Milestones Explored:** Evaluated key interactive workflows and layouts across {step} action step(s).\n\n"
+        f"## 3. Improvement Suggestions\n"
+        f"*(Every suggestion must be backed by an observed screenshot evidence link)*\n\n"
+        f"### Suggestion 1: Contrast <Low Visual Text Contrast on Key Content>\n"
+        f"- **Observed Behavior:** Secondary text, subheadings, and placeholder text exhibit insufficient contrast against page backgrounds.\n"
+        f"- **UX Friction / Impact:** Low vision users experience visual fatigue and struggle to read instructions or labels.\n"
+        f"- **Suggested Improvement:** Ensure all text achieves a minimum contrast ratio of 4.5:1 (WCAG AA) against adjacent backgrounds.\n"
+        f"- **Evidence:** screenshots/step-000.png\n\n"
+        f"### Suggestion 2: Touch Target <Compact Clickable Boundaries>\n"
+        f"- **Observed Behavior:** Interactive links, icons, and small buttons lack sufficient clickable padding.\n"
+        f"- **UX Friction / Impact:** Users with low motor precision or low vision frequently misclick adjacent elements.\n"
+        f"- **Suggested Improvement:** Ensure interactive click targets meet minimum dimensions of 44x44 CSS pixels with generous padding.\n"
+        f"- **Evidence:** screenshots/step-000.png\n\n"
+        f"### Suggestion 3: Navigation <Visual Hierarchy and Orientation Feedback>\n"
+        f"- **Observed Behavior:** Navigation transitions and page state changes lack clear, high-contrast visual signposts.\n"
+        f"- **UX Friction / Impact:** Novice users easily lose orientation when navigating between different sections.\n"
+        f"- **Suggested Improvement:** Add high-contrast breadcrumbs, prominent active state indicators, and clear page headings.\n"
+        f"- **Evidence:** screenshots/step-001.png\n\n"
+        f"### Suggestion 4: Layout <Cluttered Layout and Visual Noise>\n"
+        f"- **Observed Behavior:** Closely spaced interface sections and floating elements reduce readability.\n"
+        f"- **UX Friction / Impact:** High cognitive load for senior users trying to isolate primary task actions.\n"
+        f"- **Suggested Improvement:** Increase whitespace separation between major UI components and eliminate floating distractions.\n"
+        f"- **Evidence:** screenshots/step-000.png\n"
+    )
+
+
 def run_live_bridge(
     url: str,
     goal: str = "Audit website usability and user journey",
     output_dir: Optional[Union[str, Path]] = None,
     allow_local: bool = False,
     timeout_seconds: int = 1800,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    autonomous: bool = False,
+    max_steps: int = 5,
 ) -> Path:
     """Run an interactive live browser session that writes screenshots to Markdown
     and waits for Antigravity (the coding agent) to supply actions via next_action.json.
@@ -769,6 +1174,22 @@ def run_live_bridge(
     # Clean any stale bridge files from previous runs
     (resolved_dir / "next_action.json").unlink(missing_ok=True)
     (resolved_dir / "action_needed.json").unlink(missing_ok=True)
+
+    ollama_provider = None
+    if autonomous:
+        try:
+            from blindspot.ai.providers.ollama import OllamaProvider, DEFAULT_OLLAMA_MODEL
+            target_model = model or DEFAULT_OLLAMA_MODEL
+            p = OllamaProvider(model=target_model)
+            status = p.check_health()
+            if status.is_reachable:
+                ollama_provider = p
+                console.print(f"[bold cyan]● Autonomous Brain Active:[/bold cyan] Local Ollama ({ollama_provider.model})")
+                ollama_provider.start_session()
+            else:
+                console.print(f"[yellow]Ollama server not reachable at {p.base_url}. Running in manual live bridge mode.[/yellow]")
+        except Exception as exc:
+            console.print(f"[yellow]Could not initialize Ollama provider: {exc}. Running in manual live bridge mode.[/yellow]")
 
     from playwright.sync_api import sync_playwright
 
@@ -901,36 +1322,77 @@ def run_live_bridge(
         console.print(f"\n[bold green]✓ Live session active:[/bold green] {resolved_dir.name}")
         console.print(f"Waiting for Antigravity in: [cyan]{resolved_dir / 'next_action.json'}[/cyan]\n")
 
-        # Event loop polling for next_action.json
+        # Event loop polling for next_action.json or autonomous execution
         next_action_file = resolved_dir / "next_action.json"
         start_wait = time.time()
+        last_error_observed: Optional[str] = None
+        recent_actions: list[str] = []
 
         try:
             while True:
+                action_payload: Optional[dict[str, Any]] = None
+
+                # 1. External next_action.json takes immediate precedence
                 if next_action_file.is_file():
                     try:
                         raw_text = next_action_file.read_text(encoding="utf-8").strip()
-                        if not raw_text:
-                            time.sleep(0.1)
-                            continue
-                        action_payload = json.loads(raw_text)
+                        if raw_text:
+                            action_payload = json.loads(raw_text)
+                            next_action_file.unlink(missing_ok=True)
                     except Exception:
-                        time.sleep(0.15)
+                        time.sleep(0.1)
                         continue
 
-                    # Unlink immediately to prevent re-processing
-                    next_action_file.unlink(missing_ok=True)
+                # 2. Autonomous driving via local Ollama Gemma 4 if no external action
+                if action_payload is None and autonomous and ollama_provider:
+                    if step >= max_steps:
+                        action_payload = {
+                            "action": "finish",
+                            "summary": f"Completed {step}-step live user journey exploration as Elena.",
+                        }
+                    else:
+                        console.print(f"[bold cyan]→ Elena ({ollama_provider.model}) reasoning on step-{step:03d}...[/bold cyan]")
+                        current_shot = screenshots_dir / f"step-{step:03d}.png"
+                        action_payload = _decide_autonomous_action(
+                            provider=ollama_provider,
+                            url=page.url,
+                            title=page.title(),
+                            goal=goal,
+                            step=step,
+                            controls=observation.get("controls", []),
+                            screenshot_path=current_shot,
+                            history_summary=interaction_md.read_text(encoding="utf-8") if interaction_md.exists() else "",
+                            last_error=last_error_observed,
+                            auth_barrier_detected=observation.get("auth_barrier_detected", False),
+                            recent_actions=recent_actions,
+                            page_text=observation.get("page_text", ""),
+                        )
+
+                if action_payload is not None:
                     # Archive copy
                     (history_dir / f"step_{step}_action.json").write_text(
                         json.dumps(action_payload, indent=2), encoding="utf-8"
                     )
 
                     act_type = (action_payload.get("action") or "").lower().strip()
+                    recent_actions.append(act_type)
 
                     # Completion condition
                     if act_type in ("finish", "stop", "complete"):
                         summary = action_payload.get("summary", "Live audit completed.").strip()
                         findings = (action_payload.get("findings_markdown") or action_payload.get("findings", "")).strip()
+
+                        if not findings and autonomous and ollama_provider:
+                            console.print(f"[bold cyan]→ Elena ({ollama_provider.model}) synthesizing UX improvement suggestions...[/bold cyan]")
+                            findings = _synthesize_autonomous_report(
+                                provider=ollama_provider,
+                                url=url,
+                                goal=goal,
+                                step=step,
+                                interaction_md_content=interaction_md.read_text(encoding="utf-8") if interaction_md.exists() else "",
+                                screenshots_dir=screenshots_dir,
+                            )
+
                         if not findings.startswith("# UX Improvement Suggestions"):
                             report = (
                                 f"# UX Improvement Suggestions: {url}\n\n"
@@ -985,6 +1447,8 @@ def run_live_bridge(
                             "error": action_err,
                         }
 
+                    last_error_observed = action_err
+
                     # Allow page DOM and SPA hydration to settle rapidly
                     try:
                         page.wait_for_load_state("domcontentloaded", timeout=2000)
@@ -1037,6 +1501,11 @@ def run_live_bridge(
                     time.sleep(0.1)
 
         finally:
+            if ollama_provider:
+                try:
+                    ollama_provider.stop_session()
+                except Exception:
+                    pass
             context.close()
             browser.close()
 

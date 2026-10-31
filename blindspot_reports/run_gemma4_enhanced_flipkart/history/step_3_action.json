@@ -1,0 +1,6 @@
+{
+  "action": "press",
+  "target": "body",
+  "value": "Escape",
+  "rationale": "A large login modal is obscuring the entire shopping page. As a novice user, I find these pop-ups confusing, and I must dismiss it to see the products I want to look at. I will press 'Escape' to try and close this overlay."
+}

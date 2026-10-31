@@ -1,0 +1,6 @@
+{
+  "action": "press",
+  "target": "body",
+  "value": "Escape",
+  "rationale": "An unexpected login modal immediately blocks the entire page upon loading. As Elena, a senior user with low vision, this disruptive modal obscures the main store and causes hesitation. I will press Escape to dismiss this overlay and return to the main product catalog."
+}

@@ -1,0 +1,6 @@
+{
+  "action": "press",
+  "target": "body",
+  "value": "Escape",
+  "rationale": "There is a large login modal overlaying the entire screen, which is very intrusive and obscures the shopping content. As a novice user with low vision, I need to close this modal immediately to see the website content before I can start my search."
+}

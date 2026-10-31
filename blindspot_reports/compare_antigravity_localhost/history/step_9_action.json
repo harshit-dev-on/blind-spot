@@ -1,0 +1,6 @@
+{
+  "action": "fill",
+  "target": "@e13",
+  "value": "Kolkata",
+  "rationale": "Elena fills the city field explicitly to ensure all delivery details are validated."
+}

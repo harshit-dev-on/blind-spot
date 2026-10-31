@@ -1,0 +1,6 @@
+{
+  "action": "click",
+  "target": "button:has-text('Buy at')",
+  "value": "",
+  "rationale": "As Elena, the prominent yellow 'Buy at \u20b9202' button offers much clearer affordance and higher contrast than the muted 'Add to cart' button. I will click 'Buy at \u20b9202' to advance directly toward the checkout flow and test form requirements."
+}

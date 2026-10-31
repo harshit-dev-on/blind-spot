@@ -1,0 +1,6 @@
+{
+  "action": "fill",
+  "target": "@e11",
+  "value": "9876543210",
+  "rationale": "Elena fills the required 10-digit mobile number for delivery SMS notifications."
+}

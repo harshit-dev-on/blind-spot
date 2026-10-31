@@ -1,0 +1,6 @@
+{
+  "action": "fill",
+  "target": "@e14",
+  "value": "700001",
+  "rationale": "Elena enters her 6-digit postal PIN code to validate delivery eligibility."
+}
