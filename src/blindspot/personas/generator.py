@@ -3,7 +3,7 @@
 import json
 from pathlib import Path
 import re
-from typing import List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 from blindspot.ai.base import BaseAIProvider
 from blindspot.runtime import BrowserInspectionResult

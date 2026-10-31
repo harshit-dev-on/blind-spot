@@ -6,7 +6,7 @@ resulting state screenshots, and final outcome evidence without verbose raw HTML
 """
 
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from blindspot.execution.models import (
     ActionExecutionRecord,
     ExecutionRunResult,

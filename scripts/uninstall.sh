@@ -55,6 +55,7 @@ clean_profile() {
 
 clean_profile "${HOME}/.bashrc"
 clean_profile "${HOME}/.zshrc"
+clean_profile "${HOME}/.zprofile"
 clean_profile "${HOME}/.profile"
 clean_profile "${HOME}/.config/fish/config.fish"
 

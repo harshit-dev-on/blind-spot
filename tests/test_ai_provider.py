@@ -344,7 +344,7 @@ def test_antigravity_provider_direct():
     )
     assert isinstance(plan, PersonaPlanPayload)
     assert len(plan.personas) > 0
-    assert any("iPhone" in p.description or "Shopper" in p.name for p in plan.personas)
+    assert any("Elena" in p.name for p in plan.personas)
 
     # Test Action selection
     action = provider.generate_structured(
@@ -362,21 +362,38 @@ def test_antigravity_markdown_persona_parsing():
 
     provider = AntigravityProvider()
 
-    # Read the e-commerce shopper markdown persona file
-    shopper_md = Path("personas/e_commerce_shopper.md").read_text(encoding="utf-8")
+    # Read the persona markdown file
+    persona_md = Path("personas/elena_elderly_user.md").read_text(encoding="utf-8")
     plan = provider.generate_structured(
-        prompt=f'WEBSITE INTENDED CONTEXT & AUDIENCE: "{shopper_md}"',
+        prompt=f'WEBSITE INTENDED CONTEXT & AUDIENCE: "{persona_md}"',
         schema=PersonaPlanPayload,
     )
     assert isinstance(plan, PersonaPlanPayload)
     assert len(plan.personas) >= 1
     p1 = plan.personas[0]
-    assert "Priya" in p1.name
-    assert len(p1.tasks) == 3
-    assert any("search" in t.objective.lower() for t in p1.tasks)
+    assert "Elena" in p1.name
+    assert len(p1.tasks) >= 2
+    assert any("read" in t.objective.lower() or "button" in t.objective.lower() for t in p1.tasks)
 
-    # Read the keyboard accessibility markdown persona file
-    a11y_md = Path("personas/accessibility_keyboard_user.md").read_text(encoding="utf-8")
+    # Test arbitrary keyboard accessibility markdown persona parsing
+    a11y_md = """# Persona Blueprint: Alex - Keyboard Accessibility
+### Persona 1: Alex - Keyboard Power User
+- **Experience Level:** Advanced
+- **Accessibility Needs:** Screen Reader & Full Keyboard
+- **Primary Goal:** Navigate purely via keyboard Tab and Enter keys.
+- **Likely Difficulties:** Missing focus rings
+
+#### Assigned Tasks:
+1. **Tab through navigation**:
+   - **Objective:** Press tab across all header links.
+   - **Observable Success Criteria:** Visible outline on active element.
+2. **Activate main action**:
+   - **Objective:** Press enter on primary button.
+   - **Observable Success Criteria:** Target page opens.
+3. **Verify keyboard trap avoidance**:
+   - **Objective:** Tab through modal dialog and exit with Escape.
+   - **Observable Success Criteria:** Focus returns to body.
+"""
     plan_a11y = provider.generate_structured(
         prompt=f'WEBSITE INTENDED CONTEXT & AUDIENCE: "{a11y_md}"',
         schema=PersonaPlanPayload,

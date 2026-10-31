@@ -39,11 +39,18 @@ if [[ -f "$SCRIPT_SOURCE" ]]; then
         REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
     fi
 fi
+if [[ -z "$REPO_ROOT" && -f "./pyproject.toml" ]]; then
+    REPO_ROOT="$(pwd)"
+fi
 
 if [[ -n "$REPO_ROOT" ]]; then
     run_step "Installing BlindSpot and its Python dependencies" "$UV_BIN" pip install --python "$VENV_PYTHON" --upgrade --editable "$REPO_ROOT"
 else
-    run_step "Installing BlindSpot and its Python dependencies" "$UV_BIN" pip install --python "$VENV_PYTHON" --upgrade "https://github.com/harshit-dev-on/blind-spot/archive/refs/heads/master.zip"
+    ZIP_URL="https://github.com/harshit-dev-on/blind-spot/archive/refs/heads/main.zip"
+    if ! curl -sI "$ZIP_URL" | grep -q "200\|302"; then
+        ZIP_URL="https://github.com/harshit-dev-on/blind-spot/archive/refs/heads/master.zip"
+    fi
+    run_step "Installing BlindSpot and its Python dependencies" "$UV_BIN" pip install --python "$VENV_PYTHON" --upgrade "$ZIP_URL"
 fi
 
 if [[ "$(uname -s)" == Linux* ]]; then
@@ -72,7 +79,7 @@ add_path() {
 
 case "${SHELL##*/}" in
     bash) add_path "${HOME}/.bashrc"; add_path "${HOME}/.profile" ;;
-    zsh) add_path "${HOME}/.zshrc"; add_path "${HOME}/.profile" ;;
+    zsh) add_path "${HOME}/.zshrc"; add_path "${HOME}/.zprofile"; add_path "${HOME}/.profile" ;;
     fish)
         fish_config="${HOME}/.config/fish/config.fish"
         mkdir -p "$(dirname "$fish_config")"
