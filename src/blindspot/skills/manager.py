@@ -4,6 +4,7 @@ Conforms to the Agent Skills specification (standardized under the Linux Foundat
 """
 
 from dataclasses import dataclass, field
+import json
 import os
 from pathlib import Path
 import re
@@ -211,7 +212,7 @@ def install_skills_to_workspace(
 
     Args:
         target_root: The root of the workspace.
-        targets: List of target locations: 'agents' (.agents/skills), 'github' (.github/skills), or None (both).
+        targets: List of target locations: 'agents' (.agents/skills), 'github' (.github/skills), 'global' (~/.gemini/config/plugins/blindspot), or None (both).
 
     Returns:
         Dict mapping location name to list of installed SKILL.md paths.
@@ -222,9 +223,12 @@ def install_skills_to_workspace(
     base_dir = get_bundled_skills_dir()
     installed: Dict[str, List[Path]] = {}
 
+    plugin_root = Path.home() / ".gemini" / "config" / "plugins" / "blindspot"
     destination_maps = {
         "agents": target_root / ".agents" / "skills",
         "github": target_root / ".github" / "skills",
+        "global": plugin_root / "skills",
+        "antigravity": plugin_root / "skills",
     }
 
     for target_key in targets:
@@ -234,6 +238,32 @@ def install_skills_to_workspace(
 
         dest_dir.mkdir(parents=True, exist_ok=True)
         installed[target_key] = []
+
+        # If installing globally to Antigravity plugin config, also deploy plugin.json and rules
+        if target_key in ("global", "antigravity"):
+            plugin_root.mkdir(parents=True, exist_ok=True)
+            plugin_json = plugin_root / "plugin.json"
+            if not plugin_json.is_file():
+                plugin_json.write_text(
+                    json.dumps({
+                        "name": "blindspot",
+                        "version": "1.2.0",
+                        "description": "Autonomous AI website UX auditing, live browser inspection, and accessibility testing tool.",
+                        "author": {"name": "BlindSpot"},
+                        "license": "Apache-2.0",
+                        "commands": {
+                            "live": "blindspot live <url> --allow-local -o <output_dir>"
+                        }
+                    }, indent=2),
+                    encoding="utf-8",
+                )
+            rules_dir = plugin_root / "rules"
+            rules_dir.mkdir(parents=True, exist_ok=True)
+            rules_file = rules_dir / "AGENTS.md"
+            if not rules_file.is_file():
+                bundled_agents = Path(__file__).resolve().parent.parent.parent.parent / "AGENTS.md"
+                if bundled_agents.is_file():
+                    shutil.copy2(bundled_agents, rules_file)
 
         for item in base_dir.iterdir():
             if item.is_dir() and (item / "SKILL.md").is_file():

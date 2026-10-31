@@ -1763,7 +1763,7 @@ def install_skills_cmd(
         typer.Option(
             "--target",
             "-t",
-            help="Target agent directory standard: 'agents' (.agents/skills), 'github' (.github/skills), or 'both'.",
+            help="Target agent directory: 'agents' (.agents/skills), 'github' (.github/skills), 'global' (~/.gemini/config/plugins/blindspot), 'both', or 'all'.",
             show_default=True,
         ),
     ] = "both",
@@ -1776,14 +1776,22 @@ def install_skills_cmd(
         ),
     ] = None,
 ) -> None:
-    """Export and install BlindSpot skills into the local workspace for AI coding agents."""
+    """Export and install BlindSpot skills into the local workspace or global Antigravity configuration."""
     project_root = dest or Path.cwd()
-    target_modes = ["agents", "github"] if target == "both" else [target]
+    if target == "both":
+        target_modes = ["agents", "github"]
+    elif target in ("all", "full"):
+        target_modes = ["agents", "github", "global"]
+    elif target in ("global", "antigravity"):
+        target_modes = ["global"]
+    else:
+        target_modes = [target]
 
-    if target not in ("agents", "github", "both"):
+    valid_targets = ("agents", "github", "both", "global", "antigravity", "all", "full")
+    if target not in valid_targets:
         print_error(
             title="Invalid Target",
-            message=f"Invalid target '{target}'. Must be 'agents', 'github', or 'both'.",
+            message=f"Invalid target '{target}'. Must be one of: {', '.join(valid_targets)}.",
         )
         raise typer.Exit(code=2)
 
