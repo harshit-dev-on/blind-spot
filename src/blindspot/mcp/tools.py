@@ -1,6 +1,7 @@
 """Tool business logic implementations for the BlindSpot Model Context Protocol (MCP) server."""
 
 import json
+import os
 from pathlib import Path
 import time
 from typing import Any, Dict, List, Optional
@@ -17,9 +18,9 @@ def _resolve_run_dir(run_id: str) -> Path:
         job_manager.reports_root / run_id,
         Path.cwd() / "blindspot_reports" / run_id,
         Path.cwd() / "reports" / run_id,
-        Path("d:/Projects/blind-spot/blindspot_reports") / run_id,
-        Path("d:/Projects/blind-spot/reports") / run_id,
     ]
+    if "BLINDSPOT_REPORTS_DIR" in os.environ:
+        candidates.insert(0, Path(os.environ["BLINDSPOT_REPORTS_DIR"]) / run_id)
     for c in candidates:
         if c.exists() and c.is_dir():
             return c.resolve()

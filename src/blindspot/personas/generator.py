@@ -229,6 +229,7 @@ def get_bundled_personas_dir() -> Path:
     """Find pre-built markdown personas directory in workspace or package."""
     candidates = [
         Path.cwd() / "personas",
+        Path(__file__).resolve().parent / "bundled",
         Path(__file__).resolve().parent.parent.parent.parent / "personas",
         Path(__file__).resolve().parent.parent / "personas",
     ]

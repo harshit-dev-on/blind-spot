@@ -53,7 +53,7 @@ blindspot = "blindspot.cli:main_entry"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/blindspot", "src/blindspot1"]
-include = ["src/blindspot/skills/**/*.md", "src/blindspot/web/static/*", "src/blindspot/knowledge/**/*.md"]
+include = ["src/blindspot/skills/**/*.md", "src/blindspot/personas/bundled/*.md", "src/blindspot/web/static/*", "src/blindspot/knowledge/**/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -424,15 +424,29 @@ class _BrowserWorker:
 
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(
-                    headless=False,
-                    slow_mo=140,
-                    args=[
-                        "--start-maximized",
-                        "--window-position=50,50",
-                        "--disable-blink-features=AutomationControlled",
-                    ],
-                )
+                launch_args = [
+                    "--start-maximized",
+                    "--window-position=50,50",
+                    "--disable-blink-features=AutomationControlled",
+                ]
+                try:
+                    browser = playwright.chromium.launch(
+                        headless=False,
+                        slow_mo=140,
+                        args=launch_args,
+                    )
+                except Exception as exc:
+                    err_msg = str(exc)
+                    if "Executable doesn't exist" in err_msg or "Please run" in err_msg:
+                        from blindspot.runtime.provisioning import ensure_browser_engine
+                        ensure_browser_engine("chromium")
+                        browser = playwright.chromium.launch(
+                            headless=False,
+                            slow_mo=140,
+                            args=launch_args,
+                        )
+                    else:
+                        raise
                 context = browser.new_context(
                     user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
                     no_viewport=True,
@@ -753,15 +767,29 @@ def run_live_bridge(
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(
-            headless=False,
-            slow_mo=140,
-            args=[
-                "--start-maximized",
-                "--window-position=50,50",
-                "--disable-blink-features=AutomationControlled",
-            ],
-        )
+        launch_args = [
+            "--start-maximized",
+            "--window-position=50,50",
+            "--disable-blink-features=AutomationControlled",
+        ]
+        try:
+            browser = playwright.chromium.launch(
+                headless=False,
+                slow_mo=140,
+                args=launch_args,
+            )
+        except Exception as exc:
+            err_msg = str(exc)
+            if "Executable doesn't exist" in err_msg or "Please run" in err_msg:
+                from blindspot.runtime.provisioning import ensure_browser_engine
+                ensure_browser_engine("chromium")
+                browser = playwright.chromium.launch(
+                    headless=False,
+                    slow_mo=140,
+                    args=launch_args,
+                )
+            else:
+                raise
         context = browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
             no_viewport=True,
