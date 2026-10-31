@@ -428,11 +428,17 @@ class _BrowserWorker:
                     "--start-maximized",
                     "--window-position=50,50",
                     "--disable-blink-features=AutomationControlled",
+                    "--disable-dev-shm-usage",
+                    "--disable-background-networking",
+                    "--disable-renderer-backgrounding",
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-component-update",
+                    "--no-default-browser-check",
                 ]
                 try:
                     browser = playwright.chromium.launch(
                         headless=False,
-                        slow_mo=140,
+                        slow_mo=60,
                         args=launch_args,
                     )
                 except Exception as exc:
@@ -442,7 +448,7 @@ class _BrowserWorker:
                         ensure_browser_engine("chromium")
                         browser = playwright.chromium.launch(
                             headless=False,
-                            slow_mo=140,
+                            slow_mo=60,
                             args=launch_args,
                         )
                     else:
@@ -522,16 +528,16 @@ class _BrowserWorker:
                             page = self._get_active_page(context, page)
                             result = self._perform_action(page, payload)
                             self.action_count += 1
-                            # Allow SPA state and network responses to settle
+                            # Allow SPA state and hydration to settle rapidly
                             try:
-                                page.wait_for_load_state("load", timeout=3000)
+                                page.wait_for_load_state("domcontentloaded", timeout=2000)
                             except Exception:
                                 pass
                             try:
-                                page.wait_for_load_state("networkidle", timeout=2500)
+                                page.wait_for_load_state("networkidle", timeout=800)
                             except Exception:
                                 pass
-                            page.wait_for_timeout(1200)
+                            page.wait_for_timeout(400)
 
                             page = self._get_active_page(context, page)
                             page.bring_to_front()
@@ -771,11 +777,17 @@ def run_live_bridge(
             "--start-maximized",
             "--window-position=50,50",
             "--disable-blink-features=AutomationControlled",
+            "--disable-dev-shm-usage",
+            "--disable-background-networking",
+            "--disable-renderer-backgrounding",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-component-update",
+            "--no-default-browser-check",
         ]
         try:
             browser = playwright.chromium.launch(
                 headless=False,
-                slow_mo=140,
+                slow_mo=60,
                 args=launch_args,
             )
         except Exception as exc:
@@ -785,7 +797,7 @@ def run_live_bridge(
                 ensure_browser_engine("chromium")
                 browser = playwright.chromium.launch(
                     headless=False,
-                    slow_mo=140,
+                    slow_mo=60,
                     args=launch_args,
                 )
             else:
@@ -811,14 +823,14 @@ def run_live_bridge(
         # Initial navigation & hydration
         page.goto(url, wait_until="domcontentloaded", timeout=45000)
         try:
-            page.wait_for_load_state("load", timeout=5000)
+            page.wait_for_load_state("domcontentloaded", timeout=3000)
         except Exception:
             pass
         try:
-            page.wait_for_load_state("networkidle", timeout=4000)
+            page.wait_for_load_state("networkidle", timeout=1000)
         except Exception:
             pass
-        page.wait_for_timeout(2000)
+        page.wait_for_timeout(600)
         page.bring_to_front()
         try:
             from blindspot.runtime.window_utils import bring_browser_window_to_foreground
@@ -973,16 +985,16 @@ def run_live_bridge(
                             "error": action_err,
                         }
 
-                    # Allow page DOM and SPA hydration to settle
+                    # Allow page DOM and SPA hydration to settle rapidly
                     try:
-                        page.wait_for_load_state("load", timeout=3000)
+                        page.wait_for_load_state("domcontentloaded", timeout=2000)
                     except Exception:
                         pass
                     try:
-                        page.wait_for_load_state("networkidle", timeout=2500)
+                        page.wait_for_load_state("networkidle", timeout=800)
                     except Exception:
                         pass
-                    page.wait_for_timeout(1200)
+                    page.wait_for_timeout(400)
 
                     page = _BrowserWorker._get_active_page(context, page)
                     page.bring_to_front()
@@ -1022,7 +1034,7 @@ def run_live_bridge(
                     if time.time() - start_wait > timeout_seconds:
                         console.print(f"[yellow]Session timed out after {timeout_seconds}s waiting for agent action.[/yellow]")
                         break
-                    time.sleep(0.25)
+                    time.sleep(0.1)
 
         finally:
             context.close()
