@@ -1,20 +1,8 @@
-# BlindSpot Development Directives & Rules
+# BlindSpot Autonomous Persona Audit Directives & Development Rules
 
-## 1. Primary Rule: Strix Codebase Parity (`d:\Projects\BlindSpot\strix`)
-- **Never hallucinate or invent patterns from scratch**: When designing, coding, configuring, or refactoring anything in BlindSpot, **ALWAYS refer directly to the Strix codebase** at [`d:/Projects/BlindSpot/strix`](file:///d:/Projects/BlindSpot/strix) as the gold standard.
-- **Port and adapt directly from Strix**:
-  - `strix/strix/config/` -> Configuration loading, universal env variables (`STRIX_LLM`, `BLINDSPOT_LLM`, `LLM_API_KEY`, `LLM_API_BASE`), JSON config parsing, and `persist_current()`.
-  - `strix/strix/interface/` -> CLI arguments (`-t`, `-u`, `-i`, `-c`, `-m`, `-n`, `--config`), start screens, environment validation panels (`validate_environment()`).
-  - `strix/strix/agents/` -> Agent design, worker loops, tool calling, execution prompts.
-  - `strix/strix/runtime/` -> Safe session management, context isolation, navigation safety.
-  - `strix/strix/report/` -> Report state, models, SARIF generation, structured findings.
-- **Zero Docker Requirement**: Maintain native host Playwright browser execution for BlindSpot while preserving 100% of Strix's CLI and configuration ergonomics.
-- **Always verify against Strix source**: Before writing new code, search and view the relevant Strix implementation in [`strix/`](file:///d:/Projects/BlindSpot/strix) to mirror function signatures, argument conventions, and design patterns.
+These rules MUST be followed whenever BlindSpot is invoked or when auditing websites using BlindSpot across any repository or project.
 
-## 2. Zero References in BlindSpot
-- **Never mention Strix**: Absolutely zero references, mentions, docstrings, comments, environment variable examples, or credits to Strix anywhere in the BlindSpot codebase, documentation, CLI outputs, or configuration files. BlindSpot is a completely standalone project.
-
-## 3. Mandatory Interactive Browsing Workflow & Zero Exploration Delay
+## 1. Mandatory Interactive Browsing Workflow & Zero Exploration Delay
 - **Zero Exploration Delay**: When asked to audit a website or run BlindSpot, Antigravity MUST NOT inspect, search, grep, view, or analyze the BlindSpot repository, python packages, or CLI help before executing. Start immediately in Step 1.
 - **The Core Philosophy: Human Perception-Action Loop & Living Context Window**:
   - **No Rigid Pre-Scripted Sequences**: Just like a normal human browses a website, the site is opened and the user waits for it to load properly. The brain sees what is rendered on screen, processes the visual information, and decides what single action to perform. After performing the action, the user waits for new information to show up. There is NEVER a fixed set of "do this and that" scripted steps—one can only decide the next move by seeing what is visually present on screen.
@@ -40,32 +28,32 @@
     `blindspot live "<URL>" --persona "elena" --allow-local -o "blindspot_reports/<run_id>"`
 - **Default Persona Blueprint**: By default, BlindSpot uses strictly 1 single persona blueprint: **Elena – Senior User (Low Vision & Novice Tech)** to evaluate clarity, text contrast, button affordance, and intuitive navigation across all applications. Multiple personas are NEVER launched unless explicitly requested by the user.
 
-## 4. Antigravity-First & Zero External API Requirement
+## 2. Antigravity-First & Zero External API Requirement
 - **Zero External API Requirement**: ALWAYS assume the user has NO external cloud API keys (no Gemini, no OpenAI, no Anthropic, etc.). BlindSpot MUST NEVER fail or throw errors because an external API key is missing.
 - **Antigravity Native Operation**: The application MUST run 100% fine using Antigravity natively. Persona planning, live browser task execution, DOM heuristic inspection, and reporting must operate smoothly with zero external API tokens.
 - **Default AI Provider**: The default provider is `antigravity` (`AntigravityProvider`), which uses intelligent DOM-guided heuristics and local execution without reaching out to external cloud AI APIs.
 
-## 5. Mandatory Visible Live Browser Execution (Always On-Screen)
+## 3. Mandatory Visible Live Browser Execution (Always On-Screen)
 - **Live Visible Browser Mandatory**: Headless browser execution is STRICTLY PROHIBITED. Every audit MUST launch an actual visible desktop Chromium window (`headless=False`) directly in front of the user so they can watch live browsing, clicks, and page transitions in real time.
 - **Always Brought to Foreground**: The browser window must be restored, maximized or appropriately sized, brought to the front of desktop windows, and pinned (`stay_topmost=True`) during live interactions.
 
-## 6. Strict Black-Box Browser Auditing (No Code Access)
+## 4. Strict Black-Box Browser Auditing (No Code Access)
 - **Zero Source Code Access**: BlindSpot is strictly forbidden from reading, opening, analyzing, or referencing repository source code, backend files, or local implementation files. It must audit the target website purely as an external user through the visible Playwright browser.
 - **Never suggest code fixes or open code files**: Do NOT analyze codebase files, do NOT quote code line numbers, and do NOT propose code patches or remediation code blocks.
 
-## 7. Silent Chat Window Policy (Report Folder Only)
+## 5. Silent Chat Window Policy (Report Folder Only)
 - **No In-Chat Output Dumps**: Never reveal, print, or summarize audit findings, markdown contents, or step-by-step interaction logs in the AI chat window.
 - **Status & Folder Link Only**: The agent response in the chat window must strictly be limited to:
   1. Current status (e.g., `Status: In Progress` or `Status: Completed`).
   2. The path to the report folder where the artifacts (`browser_interaction.md`, `improvements_suggestions.md`, and `screenshots/`) are stored.
 
-## 8. Strict 3-Artifact Output Mandate
+## 6. Strict 3-Artifact Output Mandate
 All legacy test suites, verification pipelines, code recommendations, and test assertion tables are completely eliminated. Every audit run must output ONLY:
 1. `browser_interaction.md` (timeline of actions, rationale, and screenshots)
 2. `improvements_suggestions.md` (evidence-based UX improvement suggestions based strictly on browser observations)
 3. `screenshots/` (all step screenshots)
 
-## 9. Codebase Stability & Working Core Invariant Freeze
+## 7. Codebase Stability & Working Core Invariant Freeze
 - **Strictly Preserve Working Implementations**: Under NO circumstances should working, validated cores be refactored or modified when introducing new features.
   1. **Desktop Session Forwarding** (`src/blindspot/runtime/desktop_utils.py`): Automatic forwarding to `WinSta0\Default` on Windows sandbox environments.
   2. **Browser Foreground Management** (`src/blindspot/runtime/window_utils.py`): Process-level `chrome.exe` verification, Alt-key focus lock bypass, and `HWND_TOPMOST` pinning.

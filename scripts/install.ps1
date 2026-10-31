@@ -47,7 +47,16 @@ Write-Host "Installing BlindSpot and its Python dependencies..." -ForegroundColo
 if ($RepoRoot) {
     Invoke-Uv pip install --python $VenvPython --upgrade --editable $RepoRoot
 } else {
-    Invoke-Uv pip install --python $VenvPython --upgrade "https://github.com/harshit-dev-on/blind-spot/archive/refs/heads/master.zip"
+    $ZipUrl = "https://github.com/harshit-dev-on/blind-spot/archive/refs/heads/main.zip"
+    try {
+        $check = Invoke-WebRequest -Uri $ZipUrl -Method Head -ErrorAction SilentlyContinue
+        if ($check.StatusCode -ne 200) {
+            $ZipUrl = "https://github.com/harshit-dev-on/blind-spot/archive/refs/heads/master.zip"
+        }
+    } catch {
+        $ZipUrl = "https://github.com/harshit-dev-on/blind-spot/archive/refs/heads/master.zip"
+    }
+    Invoke-Uv pip install --python $VenvPython --upgrade $ZipUrl
 }
 
 Write-Host "Installing the Chromium browser..." -ForegroundColor Cyan
@@ -71,6 +80,13 @@ if (($env:Path -split ";") -notcontains $InstallDir) {
     $env:Path = "$InstallDir;$env:Path"
 }
 
+Write-Host "Configuring global Antigravity plugin and skills..." -ForegroundColor Cyan
+try {
+    & $VenvPython -m blindspot1 skill install --global
+} catch {
+    Write-Warning "Could not configure global Antigravity plugin automatically: $_"
+}
+
 Write-Host "`nBlindSpot is installed." -ForegroundColor Green
 Write-Host "Run 'blindspot1 setup' any time to change providers or model settings."
 Write-Host "The default Antigravity mode works without a cloud API key."
@@ -86,5 +102,5 @@ if (-not (Test-Path -LiteralPath $UserConfig)) {
     Write-Host "Existing configuration found at $UserConfig; it was left unchanged."
 }
 
-Write-Host "`nStart an audit with: blindspot1 inspect -u https://example.com -c 'Explore the main user journey' --headed" -ForegroundColor Yellow
+Write-Host "`nStart an audit with: blindspot live `"https://example.com`"" -ForegroundColor Yellow
 Write-Host "If this terminal cannot find the command, open a new PowerShell window."

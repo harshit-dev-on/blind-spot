@@ -1767,6 +1767,15 @@ def install_skills_cmd(
             show_default=True,
         ),
     ] = "both",
+    global_plugin: Annotated[
+        bool,
+        typer.Option(
+            "--global",
+            "--antigravity",
+            help="Install globally into Antigravity plugins directory (~/.gemini/config/plugins/blindspot).",
+            show_default=False,
+        ),
+    ] = False,
     dest: Annotated[
         Optional[Path],
         typer.Option(
@@ -1778,12 +1787,12 @@ def install_skills_cmd(
 ) -> None:
     """Export and install BlindSpot skills into the local workspace or global Antigravity configuration."""
     project_root = dest or Path.cwd()
-    if target == "both":
+    if global_plugin or target in ("global", "antigravity"):
+        target_modes = ["global"]
+    elif target == "both":
         target_modes = ["agents", "github"]
     elif target in ("all", "full"):
         target_modes = ["agents", "github", "global"]
-    elif target in ("global", "antigravity"):
-        target_modes = ["global"]
     else:
         target_modes = [target]
 
@@ -1926,8 +1935,8 @@ def main_entry() -> None:
             "--version",
             "-v",
         }
-        if first_arg not in known_commands and not first_arg.startswith("-"):
-            # It's a bare URL or positional target, rewrite to live agentic audit
+        if (first_arg not in known_commands and not first_arg.startswith("-")) or first_arg in ("-t", "-u", "--target", "--url"):
+            # It's a bare URL or target option flag, route to live agentic audit
             sys.argv.insert(1, "live")
     app()
 

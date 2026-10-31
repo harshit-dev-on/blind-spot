@@ -113,13 +113,13 @@ The GitHub repository must be public for these anonymous installer commands to d
 **Windows PowerShell:**
 
 ```powershell
-irm https://raw.githubusercontent.com/harshit-dev-on/blind-spot/master/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/harshit-dev-on/blind-spot/main/scripts/install.ps1 | iex
 ```
 
 **macOS or Linux:**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/harshit-dev-on/blind-spot/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/harshit-dev-on/blind-spot/main/scripts/install.sh | bash
 ```
 
 The setup wizard defaults to Antigravity local mode, which needs no cloud API key. To change providers later, run `blindspot1 setup`. The wizard saves your configuration under `~/.blindspot/` and can configure a local Ollama model or a hosted provider.
@@ -128,10 +128,10 @@ The setup wizard defaults to Antigravity local mode, which needs no cloud API ke
 
 Connect BlindSpot's MCP server to your coding agent (see [MCP setup](#channel-2-model-context-protocol-mcp-server)). The agent opens a visible Chromium session, receives a screenshot and page evidence, decides the next step using its own model, then sends one browser action. Each action returns a new screenshot for the next decision. No separate BlindSpot API key or model provider is needed; the coding agent uses its existing model access.
 
-The final artifacts follow the same format each run: `website_context.md`, `browser_interaction.md` with the agent's rationale and screenshots after each action, `problems_found.md`, and a `screenshots/` folder. Install the bundled skill to teach compatible agents this loop:
+The final artifacts follow a clean, strict 3-artifact contract each run: `browser_interaction.md` (live visual timeline), `improvements_suggestions.md` (evidence-backed UX improvements), and a `screenshots/` folder. Install the bundled skill to teach compatible agents this loop:
 
 ```sh
-blindspot1 skill install
+blindspot skill install --global
 ```
 
 Then ask the coding agent to audit a site, for example: “Audit Flipkart's product search.” For local development targets, the agent must use `allow_local: true` when opening the session.
@@ -142,7 +142,7 @@ Then ask the coding agent to audit a site, for example: “Audit Flipkart's prod
 ### Run your first audit
 
 ```bash
-blindspot1 inspect -u https://example.com -c "Explore the main user journey" --headed
+blindspot live "https://example.com"
 ```
 
 Run `blindspot1 --help` to see all commands. Generated reports are saved under `reports/` in the current directory.
@@ -156,11 +156,11 @@ For development from a source checkout, use the contributor instructions in [`de
 Run the same one-line installer again to upgrade BlindSpot. Your saved configuration is kept:
 
 ```powershell
-irm https://raw.githubusercontent.com/harshit-dev-on/blind-spot/master/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/harshit-dev-on/blind-spot/main/scripts/install.ps1 | iex
 ```
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/harshit-dev-on/blind-spot/master/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/harshit-dev-on/blind-spot/main/scripts/install.sh | bash
 ```
 
 ---
@@ -196,31 +196,27 @@ To remove configuration too, use `curl -fsSL https://raw.githubusercontent.com/h
 Every audit generates a clean, readable, self-contained report folder:
 
 ```
-blindspot_reports/059/
-├── browser_interaction.md   # Live step-by-step screenshot interaction log
-├── problems_found.md        # Prioritized UX & WCAG accessibility findings
-├── task_tracker.md          # Step-gate milestone matrix & progress tracking
-└── screenshots/             # Visual before & after snapshot evidence
-    ├── task_1_1_step1_before.png
-    ├── task_1_1_step1_after.png
-    ├── task_1_1_step2_before.png
+blindspot_reports/001/
+├── browser_interaction.md       # Live step-by-step screenshot interaction log
+├── improvements_suggestions.md  # Evidence-backed UX & accessibility improvement suggestions
+└── screenshots/                 # Viewport PNG captures from each perception-action step
+    ├── step-000.png
+    ├── step-001.png
     └── ...
 ```
 
 ### 1. `browser_interaction.md`
 - **Zero Raw HTML Dumps**: Free of formatted DOM code blobs and raw HTML strings.
 - **Created Instantly**: File is initialized the moment auditing begins so you can monitor progress.
-- **Incremental Real-Time Logging**: Every before-screenshot, persona observation, action result, and after-screenshot is appended in real time.
+- **Incremental Real-Time Logging**: Every step screenshot, persona observation, action result, and URL transition is appended in real time.
 
-### 2. `problems_found.md`
-- **Prioritized Usability Findings**: Ranked by severity, task completion impact, and Nielsen usability heuristics.
-- **WCAG Accessibility Defects**: Clear remediation guidance and code recommendations for accessibility compliance.
-- **Structured JSON Metadata**: Embedded machine-readable payload for programmatic parsing and report viewing.
+### 2. `improvements_suggestions.md`
+- **Evidence-Backed Improvement Suggestions**: Every suggestion is directly anchored to an observed screenshot in `screenshots/`.
+- **Elena Senior User Persona**: Evaluates font sizes (\ge 16px), touch target dimensions (\ge 44x44px), WCAG AA contrast (\ge 4.5:1), and form clarity.
+- **Actionable Guidance**: Clear recommendations for design, layout, and UX refinement without modifying or touching source code.
 
-### 3. `task_tracker.md`
-- **Strict Precondition Step-Gate**: Decomposes multi-step user tasks into ordered milestones. Step $N+1$ unlocks only when Step $N$ is verified `PASSED`.
-- **Human-in-the-Loop Authentication**: Halts automation with `WAITING_USER` when login walls, OTP prompts, or credentials are required, prompting you in Antigravity or Terminal.
-- **Zero Arbitrary Action Limits**: When running with `--unlimited`, journeys run until full completion with built-in stall and cycle detectors.
+### 3. `screenshots/` Directory
+- **Visual Evidence**: Viewport captures after every browser action (`step-000.png`, `step-001.png`, etc.) verifying the exact screen state.
 
 ---
 
@@ -255,7 +251,7 @@ BlindSpot1 is agent-native. Coding agents like **Antigravity**, **Claude Code**,
 
 | Integration Channel | Setup Command / Location | How the Agent Discovers It |
 | :--- | :--- | :--- |
-| **1. Agent Skills** *(Recommended)* | `blindspot1 skill install` | Agent auto-indexes `.agents/skills/**/SKILL.md` and activates autonomously on prompts like *"audit my website"* |
+| **1. Agent Skills** *(Recommended)* | `blindspot skill install --global` | Agent auto-indexes `.agents/skills/**/SKILL.md` and activates autonomously on prompts like *"audit my website"* |
 | **2. Model Context Protocol (MCP)** | `mcp_config.json` / `.cursor/mcp.json` | Exposes the live browser loop (`live_browser_open`, `live_browser_action`, `live_browser_observe`, `live_browser_finish`) plus audit tools directly to the coding agent |
 | **3. Workspace Directives** | [`AGENTS.md`](AGENTS.md) in repo root | Agent automatically reads project guidelines and follows instructions for testing and running audits |
 
@@ -268,7 +264,7 @@ Agents that support the open Agent Skills standard (including **Antigravity**, *
 In your project repository, run:
 ```bash
 # Install bundled skills into your workspace (.agents/skills/ and .github/skills/):
-blindspot1 skill install
+blindspot skill install --global
 
 # List all available agent skills:
 blindspot1 skill list

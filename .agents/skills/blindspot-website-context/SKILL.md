@@ -7,46 +7,43 @@ metadata:
 allowed-tools: "run_command, live_browser_open, live_browser_observe, live_browser_action, live_browser_finish, live_browser_close, blindspot live"
 ---
 
-# Agentic Live Browser Loop Led by Antigravity
+# BlindSpot Website Context & Live Interaction
 
-Just like a normal person browses a website, the site is opened and the user waits for it to load properly. The brain sees what is rendered on screen and decides what single action to perform. After performing the action, the user waits for new information to show up. There is NEVER a fixed set of "do this and that" scripted steps—one can only decide the next move by seeing what is visually present on screen.
-
-In BlindSpot, the `browser_interaction.md` file acts as the cumulative context window where one by one all screenshots, persona observations, and actions are recorded in chronological order. Antigravity inspects this living context window and the latest screenshot at every turn to retain complete temporal memory and make dynamic, visually grounded decisions anytime it needs:
-1. BlindSpot opens the website in a visible live browser window (`headless=False`) and waits for hydration.
-2. BlindSpot captures the initial screenshot, embeds it in `browser_interaction.md`, and writes `action_needed.json`.
-3. Antigravity inspects the latest screenshot and `browser_interaction.md` context.
-4. Antigravity writes `next_action.json` instructing BlindSpot what single action to execute.
-5. BlindSpot executes the action in the visible live browser, waits for the DOM/SPA state to settle, captures a fresh screenshot, appends it to `browser_interaction.md`, and writes an updated `action_needed.json`.
-6. This perceptual feedback loop keeps repeating until the user goal or audit journey is completely achieved.
-7. Antigravity submits the final UX improvement suggestions (`improvements_suggestions.md`).
+You are an expert UX Auditor using BlindSpot's visible browser session. Your objective is to explore a target website, observe rendered UI from screenshots, decide actions step-by-step, and output evidence-backed improvement suggestions.
 
 ---
 
-## Strict Journey Persistence & Zero Form Abandonment
+## Mandatory Interactive Browsing Workflow & Zero Exploration Delay
+
+DO NOT search, grep, read, or explore repository files or investigate how BlindSpot is implemented before starting. BlindSpot is already installed and available on PATH as `blindspot`.
+
+### The Browsing Workflow:
+1. **Launch Live Browser**: Execute `blindspot live "<TARGET_URL>" --allow-local -o "blindspot_reports/<run_id>"` as a background command (`IsDaemon=True, WaitMsBeforeAsync=1000`).
+2. **Page Load & Screenshot Capture**: The website opens in the visible live browser window (`headless=False`). BlindSpot waits a few seconds for the website to load, takes the initial screenshot, records it into `browser_interaction.md`, and writes `action_needed.json`.
+3. **Wait for Antigravity**: BlindSpot pauses and waits for Antigravity to analyze the image and decide the next action.
+4. **Antigravity Visual Reasoning**: Antigravity reads `action_needed.json`, inspects `screenshots/step-000.png` via `read_file`, and reasons about the next action from the perspective of **Elena – Senior User (Low Vision & Novice Tech)** (evaluating headline contrast, button affordance, and navigation).
+5. **Antigravity Writes Next Action**: Antigravity writes `next_action.json` into the report folder:
+   `{"action": "<click|scroll|hover|press|fill>", "target": "@eN", "value": "...", "rationale": "..."}`
+6. **BlindSpot Executes & Captures New Screenshot**: BlindSpot reads `next_action.json`, executes the action in the visible live browser, waits for the DOM to settle, captures `step-NNN.png`, appends the action and new screenshot to `browser_interaction.md`, and writes a new `action_needed.json`.
+7. **Iterative Feedback Loop**: Antigravity waits for the new screenshot, inspects it, decides the next action, and writes `next_action.json`. This loop keeps repeating until the desired audit task is completed.
+8. **Completion & Reporting**: When the audit goals are achieved, Antigravity sends `{"action": "finish", "summary": "...", "findings_markdown": "..."}`. BlindSpot writes `improvements_suggestions.md`, closes the browser, and completes.
+
+### Strict Journey Persistence & Zero Form Abandonment
 - **Never Give Up Prematurely**: Elena must follow through with the entire user journey (e.g. discovery -> item selection -> cart -> checkout -> form fill -> order placement & confirmation) to actual completion. Never conclude after just a few random clicks or scrolls.
 - **Form Completion Requirement**: When Elena encounters a form (such as checkout delivery details, shipping address, or contact form), she MUST NOT blindly click "Submit" or "Place Order" with empty fields and then give up or wander off to unrelated tabs! She must systematically inspect the form controls, fill all required fields (Name: "Elena Rostova", Mobile: "9876543210", Address: "124 Market Street, Apt 4B", City: "Kolkata", Pincode: "700001", etc.) with sensible demo data, select appropriate delivery/payment options, submit the form, and verify the confirmation or success page.
 - **No Disjointed Tab Jumping**: Elena must NEVER perform random activities or abandon an active workflow to click unrelated navigation links (such as jumping from an active checkout to 'Prescription', 'About', or 'Terms') unless the active journey is completely resolved.
 
----
-
-## Zero-Delay Instant Execution Directive
-
-DO NOT search, grep, read, or explore repository files or investigate how BlindSpot is implemented before starting. BlindSpot is already installed and available on PATH as `blindspot`.
-
-Immediately start the audit in Step 1 using `run_command`:
-- **Autonomous Audit (1 best persona automatically selected)**:
-  `blindspot -t "<TARGET_URL>" --allow-local -o "blindspot_reports/<run_id>"`
-- **Live Interactive Session**:
+### Audit Commands:
+- **Live Interactive Audit (Default & Required)**:
   `blindspot live "<TARGET_URL>" --allow-local -o "blindspot_reports/<run_id>"`
-- **With Specific Persona**:
+- **Audit with Specific Persona**:
   `blindspot live "<TARGET_URL>" --persona "elena" --allow-local -o "blindspot_reports/<run_id>"`
 
 ---
 
 ## Persona Selection Rules
 
-- **Default to 1 Persona**: By default, BlindSpot automatically selects exactly 1 single best persona matched to the target site. Multiple personas are NEVER launched unless explicitly requested by the user.
-- **User-Specified Personas**: If the user asks for a specific persona or archetype (e.g. `ecommerce`, `mobile`, `accessibility`, `tech`, `skeptical`), use `--persona <name>`. If the user specifies a count, use `-p <count>`.
+- **Default to 1 Persona**: By default, BlindSpot uses strictly 1 single persona blueprint: **Elena – Senior User (Low Vision & Novice Tech)** (minimum 16px font sizes, $\ge 4.5:1$ WCAG AA contrast, clear button affordance $\ge 44 \times 44\text{px}$, and clear navigation/back controls). Multiple personas are NEVER launched unless explicitly requested by the user.
 
 ---
 
@@ -139,11 +136,17 @@ Every run directory MUST contain ONLY the following three artifacts:
 
 ## Example
 
-User: "Audit Flipkart's product search."
+User: "Audit our web app's website context."
 
-Immediately run `run_command`:
-`blindspot live "https://www.flipkart.com" --persona elena --allow-local -o "blindspot_reports/run_001"`
+1. Launch background live browser:
+`blindspot live "https://myapp.com" --allow-local -o "blindspot_reports/run_001"`
 
-When the command completes, respond in the chat window with ONLY:
+2. Step-by-step visual perceptual loop:
+- Read `blindspot_reports/run_001/action_needed.json`
+- Inspect `blindspot_reports/run_001/screenshots/step-000.png`
+- Write `blindspot_reports/run_001/next_action.json` with next action
+- Repeat until finish action
+
+3. When completed, respond in the chat window with ONLY:
 Status: Completed
 Report Directory: blindspot_reports/run_001

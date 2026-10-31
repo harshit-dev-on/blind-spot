@@ -113,5 +113,9 @@ else
 fi
 
 echo
-echo "Start an audit with: blindspot1 inspect -u https://example.com -c 'Explore the main user journey' --headed"
+echo "Configuring global Antigravity plugin and skills..."
+"$VENV_PYTHON" -m blindspot1 skill install --global || true
+
+echo
+echo "Start an audit with: blindspot live https://example.com"
 echo "If this terminal cannot find the command, open a new terminal window."
