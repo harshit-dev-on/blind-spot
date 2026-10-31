@@ -45,3 +45,4 @@
    - **Starting Conditions:** Starts on homepage.
    - **Observable Success Criteria:** Navigation progresses cleanly with legible headings and obvious breadcrumbs or back links, no jarring popups block the screen.
    - **Evidence to Collect:** Back link or logo availability, page title clarity, presence of intrusive blocking overlays.
+
